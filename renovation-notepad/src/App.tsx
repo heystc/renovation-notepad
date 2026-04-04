@@ -3,8 +3,9 @@ import axios from 'axios';
 import {
   Plus, Search, X, Upload, Pin, CheckCircle2, Clock, AlertCircle,
   Home, Sofa, Utensils, Bath, Bed, BookOpen, User, Flower2, MoreVertical,
-  PieChart, DollarSign, FileText, Settings, Trash2, Save,
-  ArrowLeft, Bold, Italic, List, ListOrdered, Link as LinkIcon
+  PieChart, DollarSign, Settings, Trash2, Save,
+  ArrowLeft, Bold, Italic, List, ListOrdered, Link as LinkIcon,
+  FilePen
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -133,7 +134,7 @@ const MOCK_EXPENSES: ExpenseItem[] = [
 
 // --- API Client ---
 const api = axios.create({
-  baseURL: 'http://localhost:3001/api',
+  baseURL: import.meta.env.VITE_API_BASE_URL || '/api',
   timeout: 10000,
 });
 
@@ -1010,7 +1011,7 @@ const NoteDetailPage = () => {
                     onClick={() => setIsEditing(true)}
                     className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-600"
                   >
-                    <FileText className="w-5 h-5" />
+                    <FilePen className="w-5 h-5" />
                   </button>
                   <button
                     onClick={handleDelete}
