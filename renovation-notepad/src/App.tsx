@@ -1889,11 +1889,6 @@ const HomePage = () => {
       <main className="max-w-7xl mx-auto p-6">
         {viewMode === 'notes' ? (
           <>
-            <div className="mb-8">
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">装修进度管理</h1>
-              <p className="text-gray-600">记录每个环节的设计灵感、产品信息和预算支出。点击笔记卡片在新标签页打开。</p>
-            </div>
-
             <div className="space-y-4 mb-6">
               <div className="flex flex-wrap gap-2">
                 <button
