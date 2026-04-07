@@ -4,6 +4,7 @@ import bodyParser from 'body-parser';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -13,16 +14,49 @@ const PORT = 3001;
 
 // 数据存储目录
 const DATA_DIR = path.join(__dirname, 'data');
+// 图片上传目录
+const UPLOAD_DIR = path.join(__dirname, 'uploads');
 
-// 确保数据目录存在
+// 确保目录存在
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
+if (!fs.existsSync(UPLOAD_DIR)) {
+  fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+}
+
+// 配置 multer 图片上传
+const storage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, UPLOAD_DIR);
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const uniqueName = `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    cb(null, uniqueName);
+  }
+});
+
+const upload = multer({
+  storage: storage,
+  limits: {
+    fileSize: 5 * 1024 * 1025 // 5MB 限制
+  },
+  fileFilter: function (req, file, cb) {
+    if (file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only image files are allowed'), false);
+    }
+  }
+});
 
 // 中间件
 app.use(cors());
 app.use(bodyParser.json());
 app.use(express.static('public'));
+// 静态托管上传的图片
+app.use('/uploads', express.static(UPLOAD_DIR));
 
 // 读取 notes.json（索引文件）
 const readNotesIndex = () => {
@@ -408,15 +442,70 @@ app.put('/api/settings', (req, res) => {
   }
 });
 
+// 上传图片
+app.post('/api/upload', upload.single('image'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({
+        success: false,
+        message: 'No image file provided'
+      });
+    }
+
+    const imageUrl = `/uploads/${req.file.filename}`;
+
+    res.json({
+      success: true,
+      url: imageUrl,
+      filename: req.file.filename,
+      originalname: req.file.originalname
+    });
+  } catch (error) {
+    console.error('Error uploading image:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to upload image'
+    });
+  }
+});
+
+// 删除图片
+app.delete('/api/upload/:filename', (req, res) => {
+  try {
+    const { filename } = req.params;
+    const filePath = path.join(UPLOAD_DIR, filename);
+
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    res.json({
+      success: true,
+      message: 'Image deleted'
+    });
+  } catch (error) {
+    console.error('Error deleting image:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Failed to delete image'
+    });
+  }
+});
+
 // 启动服务器
 app.listen(PORT, () => {
   console.log(`🚀 装修记事本后端服务已启动`);
   console.log(`📡 API地址: http://localhost:${PORT}`);
   console.log(`📁 数据目录: ${DATA_DIR}`);
+  console.log(`🖼️  图片上传目录: ${UPLOAD_DIR}`);
   console.log(`\n可用的API端点:`);
-  console.log(`  GET  /api/status    - 服务器状态`);
-  console.log(`  GET  /api/notes     - 获取所有笔记`);
-  console.log(`  POST /api/notes     - 创建新笔记`);
-  console.log(`  PUT  /api/notes/:id - 更新笔记`);
-  console.log(`  DELETE /api/notes/:id - 删除笔记`);
+  console.log(`  GET  /api/status        - 服务器状态`);
+  console.log(`  GET  /api/notes         - 获取所有笔记`);
+  console.log(`  POST /api/notes         - 创建新笔记`);
+  console.log(`  PUT  /api/notes/:id     - 更新笔记`);
+  console.log(`  DELETE /api/notes/:id   - 删除笔记`);
+  console.log(`  POST /api/upload        - 上传图片`);
+  console.log(`  DELETE /api/upload/:filename - 删除图片`);
+  console.log(`  GET  /api/settings       - 获取设置`);
+  console.log(`  PUT  /api/settings       - 更新设置`);
 });

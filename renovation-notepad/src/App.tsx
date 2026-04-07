@@ -1,11 +1,11 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios from 'axios';
 import {
   Plus, Search, X, Upload, Pin, CheckCircle2, Clock, AlertCircle,
   Home, Sofa, Utensils, Bath, Bed, BookOpen, User, Flower2, MoreVertical,
   PieChart, DollarSign, Settings, Trash2, Save,
   ArrowLeft, Bold, Italic, List, ListOrdered, Link as LinkIcon,
-  FilePen
+  FilePen, Image as ImageIcon
 } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -171,6 +171,9 @@ const renderMarkdown = (md: string) => {
     .replace(/\*\*(.*?)\*\*/gim, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/gim, '<em>$1</em>')
     .replace(/~~(.*?)~~/gim, '<del>$1</del>')
+    // Handle images first - !\[alt]\(url\)
+    .replace(/!\[([^\]]*)\]\(([^)]+)\)/gim, '<div style="margin: 16px 0;"><img src="$2" alt="$1" style="max-width: 100%; border-radius: 8px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);" /></div>')
+    // Then handle regular links
     .replace(/\[([^\]]*)\]\(([^)]+)\)/gim, '<a href="$2" target="_blank" rel="noopener noreferrer" style="color: #2563eb; text-decoration: underline;">$1</a>');
 
   const lines = html.split('\n');
@@ -210,8 +213,13 @@ interface MarkdownEditorProps {
 }
 
 const MarkdownEditor = ({ content, onChange, placeholder }: MarkdownEditorProps) => {
+  const [isDragging, setIsDragging] = useState(false);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  const [isUploading, setIsUploading] = useState(false);
+
   const insertAtCursor = (before: string, after = '') => {
-    const textarea = document.getElementById('markdown-editor') as HTMLTextAreaElement;
+    const textarea = textareaRef.current || document.getElementById('markdown-editor') as HTMLTextAreaElement;
     if (!textarea) return;
 
     const start = textarea.selectionStart;
@@ -223,81 +231,212 @@ const MarkdownEditor = ({ content, onChange, placeholder }: MarkdownEditorProps)
 
     setTimeout(() => {
       textarea.focus();
+      const newCursorPos = start + before.length + selectedText.length;
       if (selectedText) {
-        textarea.setSelectionRange(start + before.length, start + before.length + selectedText.length);
+        textarea.setSelectionRange(start + before.length, newCursorPos);
       } else {
-        textarea.setSelectionRange(start + before.length, start + before.length);
+        textarea.setSelectionRange(newCursorPos, newCursorPos);
       }
     }, 0);
   };
 
+  const uploadImage = async (file: File): Promise<string> => {
+    const formData = new FormData();
+    formData.append('image', file);
+    const response = await api.post('/upload', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    if (response.data.success) {
+      // 图片URL不需要/api前缀，因为是静态文件
+      // 获取当前API的origin前缀
+      const apiBaseUrl = api.defaults.baseURL || '';
+      let imageUrl = response.data.url;
+      // 如果API baseURL是完整URL（包含host），需要加上origin
+      if (apiBaseUrl.startsWith('http')) {
+        const urlObj = new URL(apiBaseUrl);
+        imageUrl = `${urlObj.origin}${response.data.url}`;
+      }
+      return imageUrl;
+    }
+    throw new Error(response.data.message || '上传失败');
+  };
+
+  const insertImage = async (file: File) => {
+    if (!file.type.startsWith('image/')) {
+      alert('只能上传图片文件');
+      return;
+    }
+    try {
+      setIsUploading(true);
+      const imageUrl = await uploadImage(file);
+      const alt = file.name.replace(/\.[^/.]+$/, '');
+      insertAtCursor(`![${alt}](${imageUrl})`);
+    } catch (error) {
+      console.error('上传图片失败:', error);
+      alert('图片上传失败，请重试');
+    } finally {
+      setIsUploading(false);
+    }
+  };
+
+  const handlePaste = async (e: React.ClipboardEvent) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+
+    for (const item of items) {
+      if (item.type.indexOf('image') !== -1) {
+        e.preventDefault();
+        const file = item.getAsFile();
+        if (file) {
+          await insertImage(file);
+        }
+        return;
+      }
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+
+    const files = e.dataTransfer?.files;
+    if (!files || files.length === 0) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.type.startsWith('image/')) {
+        await insertImage(file);
+      }
+    }
+  };
+
+  const handleImageButtonClick = () => {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = 'image/*';
+    input.onchange = async (e: any) => {
+      const file = e.target.files?.[0];
+      if (file) {
+        await insertImage(file);
+      }
+    };
+    input.click();
+  };
+
   return (
-    <div className="border border-gray-200 rounded-lg overflow-hidden">
+    <div
+      className="border border-gray-200 rounded-lg overflow-hidden relative"
+      onDragOver={handleDragOver}
+      onDragLeave={handleDragLeave}
+      onDrop={handleDrop}
+    >
+      {(isDragging || isUploading) && (
+        <div className="absolute inset-0 bg-blue-500/10 border-2 border-dashed border-blue-500 z-10 flex items-center justify-center rounded-lg">
+          <p className="text-blue-600 font-medium bg-white px-4 py-2 rounded-lg shadow-sm">
+            {isUploading ? '上传中...' : '松开鼠标插入图片'}
+          </p>
+        </div>
+      )}
       <div className="flex flex-wrap gap-1 p-2 bg-gray-50 border-b border-gray-200">
         <button
           onClick={() => insertAtCursor('**', '**')}
-          className="p-2 rounded hover:bg-gray-200 transition-colors"
+          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
           title="粗体"
         >
           <Bold className="w-4 h-4" />
         </button>
         <button
           onClick={() => insertAtCursor('*', '*')}
-          className="p-2 rounded hover:bg-gray-200 transition-colors"
+          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
           title="斜体"
         >
           <Italic className="w-4 h-4" />
         </button>
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
           onClick={() => insertAtCursor('# ')}
-          className="p-2 rounded hover:bg-gray-200 transition-colors text-sm font-bold"
+          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors text-sm font-bold active:bg-gray-300"
           title="标题"
         >
           H1
         </button>
         <button
           onClick={() => insertAtCursor('## ')}
-          className="p-2 rounded hover:bg-gray-200 transition-colors text-sm font-bold"
+          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors text-sm font-bold active:bg-gray-300"
           title="二级标题"
         >
           H2
         </button>
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
           onClick={() => insertAtCursor('- ')}
-          className="p-2 rounded hover:bg-gray-200 transition-colors"
-          title="列表"
+          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
+          title="无序列表"
         >
           <List className="w-4 h-4" />
         </button>
         <button
           onClick={() => insertAtCursor('1. ')}
-          className="p-2 rounded hover:bg-gray-200 transition-colors"
+          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
           title="有序列表"
         >
           <ListOrdered className="w-4 h-4" />
         </button>
-        <div className="w-px h-6 bg-gray-300 mx-1" />
+        <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
           onClick={() => {
             const url = prompt('输入链接地址:');
             if (url) insertAtCursor('[链接文字](', ')');
           }}
-          className="p-2 rounded hover:bg-gray-200 transition-colors"
-          title="链接"
+          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
+          title="插入链接"
         >
           <LinkIcon className="w-4 h-4" />
         </button>
+        <button
+          onClick={handleImageButtonClick}
+          disabled={isUploading}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            isUploading ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "hover:bg-gray-200"
+          )}
+          title="插入图片"
+        >
+          {isUploading ? (
+            <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
+          ) : (
+            <ImageIcon className="w-4 h-4" />
+          )}
+        </button>
       </div>
       <textarea
+        ref={textareaRef}
         id="markdown-editor"
         value={content}
         onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder || '开始输入内容...'}
-        className="w-full p-4 min-h-[200px] resize-y focus:outline-none"
+        onPaste={handlePaste}
+        placeholder={placeholder || '开始输入内容...\n💡 提示: 可以直接从剪贴板粘贴图片，或将图片拖拽到这里'}
+        className="w-full p-4 min-h-[200px] resize-y focus:outline-none text-base"
         style={{ fontFamily: 'Consolas, Monaco, "Courier New", monospace' }}
       />
+      <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
+        💡 提示: 支持 <kbd className="px-2 py-0.5 bg-gray-200 rounded">Ctrl+V</kbd> 粘贴剪贴板图片 · 拖拽图片到此处插入
+      </div>
     </div>
   );
 };
@@ -347,10 +486,10 @@ const NoteCard = ({ note, settings, onTogglePin, onUpdateStatus }: NoteCardProps
       to={`/note/${note.id}`}
       target="_blank"
       rel="noopener noreferrer"
-      className="block"
+      className="block active:opacity-80"
     >
       <div className={cn(
-        "bg-white rounded-xl border p-4 shadow-sm hover:shadow-md transition-all relative cursor-pointer",
+        "bg-white rounded-xl border p-3 sm:p-4 shadow-sm hover:shadow-md transition-all relative cursor-pointer",
         note.isPinned ? "border-amber-300 ring-1 ring-amber-100" : "border-gray-200"
       )}>
         {note.isPinned && (
@@ -373,21 +512,21 @@ const NoteCard = ({ note, settings, onTogglePin, onUpdateStatus }: NoteCardProps
                 e.stopPropagation();
                 setShowMenu(!showMenu);
               }}
-              className="p-1 hover:bg-gray-100 rounded transition-colors"
+              className="p-2 hover:bg-gray-100 rounded transition-colors active:bg-gray-200"
             >
-              <MoreVertical className="w-4 h-4 text-gray-400" />
+              <MoreVertical className="w-5 h-5 text-gray-400" />
             </button>
 
             {showMenu && (
               <>
-                <div className="absolute right-0 top-6 w-40 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
+                <div className="absolute right-0 top-8 w-44 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-10">
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
                       onTogglePin(note.id);
                       setShowMenu(false);
                     }}
-                    className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                    className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center gap-2 active:bg-gray-100"
                   >
                     <Pin className="w-4 h-4" />
                     {note.isPinned ? '取消置顶' : '置顶笔记'}
@@ -401,7 +540,7 @@ const NoteCard = ({ note, settings, onTogglePin, onUpdateStatus }: NoteCardProps
                         onUpdateStatus(note.id, status.id);
                         setShowMenu(false);
                       }}
-                      className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
+                      className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center gap-2 active:bg-gray-100"
                     >
                       {getStatusIcon(status.icon)}
                       设为{status.label}
@@ -508,17 +647,17 @@ const AddNoteModal = ({ isOpen, onClose, onAdd, settings }: AddNoteModalProps) =
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
-      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-2 sm:p-4">
+      <div className="bg-white w-full max-w-2xl rounded-2xl shadow-2xl overflow-hidden max-h-[95vh] overflow-y-auto">
         <div className="p-4 border-b flex justify-between items-center sticky top-0 bg-white">
           <h2 className="font-semibold text-lg">新建笔记</h2>
-          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors">
+          <button onClick={onClose} className="p-2 hover:bg-gray-200 rounded-full transition-colors active:bg-gray-300">
             <X className="w-5 h-5" />
           </button>
         </div>
-        <form onSubmit={handleSubmit} className="p-6 space-y-5">
+        <form onSubmit={handleSubmit} className="p-4 sm:p-6 space-y-4">
           <div>
-            <label className="block text-sm font-medium mb-2">分类</label>
+            <label className="block text-sm font-medium mb-2 sm:mb-3">分类</label>
             <div className="flex flex-wrap gap-2">
               {settings.categories.map((cat) => (
                 <button
@@ -526,7 +665,7 @@ const AddNoteModal = ({ isOpen, onClose, onAdd, settings }: AddNoteModalProps) =
                   type="button"
                   onClick={() => setCategory(cat.id)}
                   className={cn(
-                    "flex-1 min-w-[80px] py-2 px-3 rounded-lg text-sm font-medium transition-all border",
+                    "flex-1 min-w-[70px] py-2 px-3 rounded-lg text-sm font-medium transition-all border",
                     category === cat.id
                       ? "bg-blue-50 border-blue-200 text-blue-600"
                       : "bg-white border-gray-200 text-gray-600 hover:border-blue-200"
@@ -539,19 +678,17 @@ const AddNoteModal = ({ isOpen, onClose, onAdd, settings }: AddNoteModalProps) =
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">标题 *</label>
             <input
               type="text"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-              placeholder="给这个笔记起个名字..."
+              className="w-full px-3 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm sm:text-base"
+              placeholder="标题 *"
             />
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">房间（可多选）</label>
               <div className="flex flex-wrap gap-2 p-2 border border-gray-200 rounded-lg max-h-32 overflow-y-auto">
                 {settings.rooms.map(r => (
                   <label key={r.id} className="flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer hover:bg-gray-50">
@@ -559,7 +696,7 @@ const AddNoteModal = ({ isOpen, onClose, onAdd, settings }: AddNoteModalProps) =
                       type="checkbox"
                       checked={rooms.includes(r.id)}
                       onChange={() => toggleRoom(r.id)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-5 h-5"
                     />
                     <span className="text-sm flex items-center gap-1">
                       {getRoomIcon(r.icon)}
@@ -571,11 +708,10 @@ const AddNoteModal = ({ isOpen, onClose, onAdd, settings }: AddNoteModalProps) =
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">进度状态</label>
               <select
                 value={progress}
                 onChange={(e) => setProgress(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white text-base"
               >
                 {settings.statuses.map(s => (
                   <option key={s.id} value={s.id}>{s.label}</option>
@@ -584,43 +720,40 @@ const AddNoteModal = ({ isOpen, onClose, onAdd, settings }: AddNoteModalProps) =
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="block text-sm font-medium mb-1">预算 (元)</label>
               <input
                 type="number"
                 value={budget}
                 onChange={(e) => setBudget(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                placeholder="预计花费"
+                className="w-full px-3 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm sm:text-base"
+                placeholder="预算 (元)"
               />
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">实际花费 (元)</label>
               <input
                 type="number"
                 value={actualCost}
                 onChange={(e) => setActualCost(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                placeholder="实际花费"
+                className="w-full px-3 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm sm:text-base"
+                placeholder="实际花费 (元)"
               />
             </div>
           </div>
 
           <div>
-            <label className="block text-sm font-medium mb-1">内容 (Markdown)</label>
             <MarkdownEditor
               content={content}
               onChange={setContent}
-              placeholder="记录你的思路、链接或者价格..."
+              placeholder="内容 (Markdown)"
             />
           </div>
 
           <button
             type="submit"
             disabled={isSaving || !title.trim()}
-            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            className="w-full bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-base"
           >
             {isSaving ? '保存中...' : '保存笔记'}
           </button>
@@ -698,10 +831,10 @@ const CreateNotePage = () => {
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-4xl mx-auto px-4">
           <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
               <Link to="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
                 <ArrowLeft className="w-5 h-5" />
-                <span>返回</span>
+                <span className="hidden sm:inline">返回</span>
               </Link>
             </div>
             <div className="flex items-center gap-2">
@@ -714,7 +847,7 @@ const CreateNotePage = () => {
               <button
                 onClick={handleSubmit}
                 disabled={isSaving || !title.trim()}
-                className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
               >
                 <Save className="w-4 h-4" />
                 {isSaving ? '保存中...' : '保存'}
@@ -724,13 +857,13 @@ const CreateNotePage = () => {
         </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto p-6">
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+      <main className="max-w-4xl mx-auto p-4 sm:p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-8">
           <h1 className="text-2xl font-bold text-gray-900 mb-8">新建笔记</h1>
 
-          <form onSubmit={handleSubmit} className="space-y-5">
+          <form onSubmit={handleSubmit} className="space-y-4">
             <div>
-              <label className="block text-sm font-medium mb-2">分类</label>
+              <label className="block text-sm font-medium mb-2 sm:mb-3">分类</label>
               <div className="flex flex-wrap gap-2">
                 {settings.categories.map((cat) => (
                   <button
@@ -751,19 +884,17 @@ const CreateNotePage = () => {
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">标题 *</label>
               <input
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                placeholder="给这个笔记起个名字..."
+                className="w-full px-3 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm sm:text-base"
+                placeholder="标题 *"
               />
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">房间（可多选）</label>
                 <div className="flex flex-wrap gap-2 p-2 border border-gray-200 rounded-lg max-h-32 overflow-y-auto">
                   {settings.rooms.map(r => (
                     <label key={r.id} className="flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer hover:bg-gray-50">
@@ -783,12 +914,11 @@ const CreateNotePage = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">进度状态</label>
                 <select
                   value={progress}
                   onChange={(e) => setProgress(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
-                >
+                  className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                  >
                   {settings.statuses.map(s => (
                     <option key={s.id} value={s.id}>{s.label}</option>
                   ))}
@@ -796,36 +926,33 @@ const CreateNotePage = () => {
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium mb-1">预算 (元)</label>
                 <input
                   type="number"
                   value={budget}
                   onChange={(e) => setBudget(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                  placeholder="预计花费"
+                  className="w-full px-3 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm sm:text-base"
+                  placeholder="预算 (元)"
                 />
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">实际花费 (元)</label>
                 <input
                   type="number"
                   value={actualCost}
                   onChange={(e) => setActualCost(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
-                  placeholder="实际花费"
+                  className="w-full px-3 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all text-sm sm:text-base"
+                  placeholder="实际花费 (元)"
                 />
               </div>
             </div>
 
             <div>
-              <label className="block text-sm font-medium mb-1">内容 (Markdown)</label>
               <MarkdownEditor
                 content={content}
                 onChange={setContent}
-                placeholder="记录你的思路、链接或者价格..."
+                placeholder="内容 (Markdown)"
               />
             </div>
           </form>
@@ -991,10 +1118,10 @@ const NoteDetailPage = () => {
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-4xl mx-auto px-4">
           <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
               <Link to="/" className="flex items-center gap-2 text-gray-600 hover:text-gray-900">
                 <ArrowLeft className="w-5 h-5" />
-                <span>返回</span>
+                <span className="hidden sm:inline">返回</span>
               </Link>
             </div>
             <div className="flex items-center gap-2">
@@ -1041,7 +1168,7 @@ const NoteDetailPage = () => {
                   <button
                     onClick={handleSave}
                     disabled={isSaving}
-                    className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
+                    className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors flex items-center gap-2"
                   >
                     <Save className="w-4 h-4" />
                     {isSaving ? '保存中...' : '保存'}
@@ -1053,9 +1180,9 @@ const NoteDetailPage = () => {
         </div>
       </nav>
 
-      <main className="max-w-4xl mx-auto p-6">
+      <main className="max-w-4xl mx-auto p-4 sm:p-6">
         {!isEditing ? (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-8">
             <div className="flex flex-wrap gap-2 mb-6">
               <Badge category={category} categories={settings.categories} />
               {rooms.map((roomId) => {
@@ -1097,10 +1224,10 @@ const NoteDetailPage = () => {
             )}
           </div>
         ) : (
-          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
-            <div className="space-y-6">
+          <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-8">
+            <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium mb-2">分类</label>
+                <label className="block text-sm font-medium mb-2 sm:mb-3">分类</label>
                 <div className="flex flex-wrap gap-2">
                   {settings.categories.map((cat) => (
                     <button
@@ -1121,18 +1248,17 @@ const NoteDetailPage = () => {
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">标题 *</label>
                 <input
                   type="text"
                   value={title}
                   onChange={(e) => setTitle(e.target.value)}
-                  className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                  className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                  placeholder="标题 *"
                 />
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">房间（可多选）</label>
                   <div className="flex flex-wrap gap-2 p-2 border border-gray-200 rounded-lg max-h-32 overflow-y-auto">
                     {settings.rooms.map(r => (
                       <label key={r.id} className="flex items-center gap-2 px-3 py-1.5 rounded cursor-pointer hover:bg-gray-50">
@@ -1152,12 +1278,11 @@ const NoteDetailPage = () => {
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">进度状态</label>
                   <select
                     value={progress}
                     onChange={(e) => setProgress(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
-                  >
+                    className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all bg-white"
+                      >
                     {settings.statuses.map(s => (
                       <option key={s.id} value={s.id}>{s.label}</option>
                     ))}
@@ -1165,33 +1290,33 @@ const NoteDetailPage = () => {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-sm font-medium mb-1">预算 (元)</label>
                   <input
                     type="number"
                     value={budget}
                     onChange={(e) => setBudget(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                    className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                    placeholder="预算 (元)"
                   />
                 </div>
 
                 <div>
-                  <label className="block text-sm font-medium mb-1">实际花费 (元)</label>
                   <input
                     type="number"
                     value={actualCost}
                     onChange={(e) => setActualCost(e.target.value)}
-                    className="w-full px-4 py-2.5 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                    className="w-full px-4 py-3 rounded-lg border border-gray-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none transition-all"
+                    placeholder="实际花费 (元)"
                   />
                 </div>
               </div>
 
               <div>
-                <label className="block text-sm font-medium mb-1">内容 (Markdown)</label>
                 <MarkdownEditor
                   content={content}
                   onChange={setContent}
+                  placeholder="内容 (Markdown)"
                 />
               </div>
             </div>
@@ -1269,15 +1394,15 @@ const ExpenseTable = ({ expenses }: { expenses: ExpenseItem[] }) => {
         <h3 className="font-semibold text-gray-900">费用明细</h3>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full">
+        <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">项目</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">分类</th>
-              <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">房间</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">预算</th>
-              <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">实际</th>
-              <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">项目</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">分类</th>
+              <th className="px-3 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">房间</th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">预算</th>
+              <th className="px-3 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">实际</th>
+              <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">状态</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -1285,26 +1410,26 @@ const ExpenseTable = ({ expenses }: { expenses: ExpenseItem[] }) => {
               const diff = expense.actual - expense.budgeted;
               return (
                 <tr key={expense.id} className="hover:bg-gray-50 transition-colors">
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3">
                     <span className="font-medium text-gray-900">{expense.name}</span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3 hidden sm:table-cell">
                     <span className="text-sm text-gray-500">{expense.category}</span>
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-3 py-3 hidden sm:table-cell">
                     {expense.room && <span className="text-sm text-gray-500">{expense.room}</span>}
                   </td>
-                  <td className="px-4 py-3 text-right text-gray-600">
+                  <td className="px-3 py-3 text-right text-gray-600">
                     ¥{expense.budgeted.toLocaleString()}
                   </td>
-                  <td className="px-4 py-3 text-right">
+                  <td className="px-3 py-3 text-right">
                     <span className={cn("font-medium", diff > 0 ? "text-red-600" : "text-gray-900")}>
                       ¥{expense.actual.toLocaleString()}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-center">
+                  <td className="px-3 py-3 text-center">
                     <span className={cn(
-                      "px-2.5 py-1 rounded-full text-xs font-medium",
+                      "px-2 py-1 rounded-full text-xs font-medium",
                       expense.status === 'paid'
                         ? "bg-green-100 text-green-700"
                         : "bg-yellow-100 text-yellow-700"
@@ -1636,6 +1761,7 @@ const HomePage = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isImportModalOpen, setIsImportModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isFiltersOpen, setIsFiltersOpen] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeRooms, setActiveRooms] = useState<string[]>([]);
   const [activeStatus, setActiveStatus] = useState<string | null>(null);
@@ -1807,16 +1933,17 @@ const HomePage = () => {
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4">
           <div className="flex justify-between h-16 items-center">
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center text-white font-bold">
                   装
                 </div>
-                <span className="font-bold text-xl">装修记事本</span>
+                <span className="font-bold text-xl hidden sm:block">装修记事本</span>
+                <span className="font-bold text-lg sm:hidden">装修笔记</span>
               </div>
-              <span className="text-xs text-gray-500">{serverStatus}</span>
+              <span className="text-xs text-gray-500 hidden sm:inline">{serverStatus}</span>
             </div>
-            <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
               <div className="flex bg-gray-100 rounded-lg p-1">
                 <button
                   onClick={() => setViewMode('notes')}
@@ -1846,13 +1973,13 @@ const HomePage = () => {
                 <Search className="w-4 h-4 mr-2 text-gray-500" />
                 <input
                   type="text"
-                  placeholder="搜索笔记..."
+                  placeholder="搜索..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-transparent border-none outline-none w-48"
+                  className="bg-transparent border-none outline-none w-24 sm:w-48"
                 />
               </div>
-              <div className="flex gap-2">
+              <div className="flex gap-1 sm:gap-2">
                 {viewMode === 'notes' && (
                   <>
                     <button
@@ -1873,10 +2000,10 @@ const HomePage = () => {
                       to="/note/new"
                       target="_blank"
                       rel="noopener noreferrer"
-                      className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
+                      className="bg-blue-600 text-white px-3 py-2 rounded-lg hover:bg-blue-700 flex items-center gap-2 transition-colors"
                     >
                       <Plus className="w-4 h-4" />
-                      新建笔记
+                      <span className="hidden sm:inline">新建笔记</span>
                     </Link>
                   </>
                 )}
@@ -1886,15 +2013,127 @@ const HomePage = () => {
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto p-6">
+      <main className="max-w-7xl mx-auto p-4 sm:p-6">
         {viewMode === 'notes' ? (
           <>
-            <div className="space-y-4 mb-6">
+            {/* 移动端筛选区域 - 可折叠 */}
+            <div className="sm:hidden mb-4">
+              <button
+                onClick={() => setIsFiltersOpen(!isFiltersOpen)}
+                className="w-full bg-gray-100 text-gray-700 px-4 py-2 rounded-lg flex items-center justify-between"
+              >
+                <span>筛选</span>
+                <span className="text-xs text-gray-500">
+                  {activeCategory || activeRooms.length > 0 || activeStatus ? "已筛选" : "全部"}
+                </span>
+              </button>
+
+              {isFiltersOpen && (
+                <div className="mt-2 p-4 bg-white rounded-lg shadow-sm border border-gray-200 space-y-3">
+                  {/* 分类筛选 */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">分类</label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setActiveCategory(null)}
+                        className={cn(
+                          "px-2 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors",
+                          !activeCategory ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-700"
+                        )}
+                      >
+                        全部
+                      </button>
+                      {settings.categories.map((cat) => (
+                        <button
+                          key={cat.id}
+                          onClick={() => setActiveCategory(activeCategory === cat.id ? null : cat.id)}
+                          className={cn(
+                            "px-2 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors",
+                            activeCategory === cat.id
+                              ? "bg-blue-600 text-white"
+                              : "bg-gray-100 text-gray-700"
+                          )}
+                        >
+                          {cat.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 房间筛选 */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">房间</label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setActiveRooms([])}
+                        className={cn(
+                          "px-2 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1",
+                          activeRooms.length === 0 ? "bg-emerald-600 text-white" : "bg-gray-100 text-gray-700"
+                        )}
+                      >
+                        <Home className="w-3 h-3" />
+                        全部
+                      </button>
+                      {settings.rooms.map((room) => (
+                        <button
+                          key={room.id}
+                          onClick={() => handleRoomToggle(room.id)}
+                          className={cn(
+                            "px-2 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1",
+                            activeRooms.includes(room.id)
+                              ? "bg-emerald-600 text-white"
+                              : "bg-gray-100 text-gray-700"
+                          )}
+                        >
+                          {getRoomIcon(room.icon)}
+                          {room.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* 状态筛选 */}
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-2">状态</label>
+                    <div className="flex flex-wrap gap-2">
+                      <button
+                        onClick={() => setActiveStatus(null)}
+                        className={cn(
+                          "px-2 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors",
+                          !activeStatus ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-700"
+                        )}
+                      >
+                        全部
+                      </button>
+                      {settings.statuses.map((status) => (
+                        <button
+                          key={status.id}
+                          onClick={() => setActiveStatus(activeStatus === status.id ? null : status.id)}
+                          className={cn(
+                            "px-2 py-1.5 rounded text-xs font-medium whitespace-nowrap transition-colors flex items-center gap-1",
+                            activeStatus === status.id
+                              ? "bg-violet-600 text-white"
+                              : "bg-gray-100 text-gray-700"
+                          )}
+                        >
+                          {getStatusIcon(status.icon)}
+                          {status.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* 桌面端筛选区域 */}
+            <div className="hidden sm:block space-y-4 mb-6">
+              {/* 分类筛选 */}
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setActiveCategory(null)}
                   className={cn(
-                    "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
+                    "px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
                     !activeCategory ? "bg-blue-600 text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                   )}
                 >
@@ -1905,7 +2144,7 @@ const HomePage = () => {
                     key={cat.id}
                     onClick={() => setActiveCategory(activeCategory === cat.id ? null : cat.id)}
                     className={cn(
-                      "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
+                      "px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
                       activeCategory === cat.id
                         ? "bg-blue-600 text-white"
                         : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
@@ -1916,11 +2155,12 @@ const HomePage = () => {
                 ))}
               </div>
 
+              {/* 房间筛选 */}
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setActiveRooms([])}
                   className={cn(
-                    "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5",
+                    "px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5",
                     activeRooms.length === 0 ? "bg-emerald-600 text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                   )}
                 >
@@ -1932,23 +2172,24 @@ const HomePage = () => {
                     key={room.id}
                     onClick={() => handleRoomToggle(room.id)}
                     className={cn(
-                      "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5",
+                      "px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5",
                       activeRooms.includes(room.id)
                         ? "bg-emerald-600 text-white"
                         : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                     )}
                   >
                     {getRoomIcon(room.icon)}
-                    {room.label}
+                    <span className="hidden sm:inline">{room.label}</span>
                   </button>
                 ))}
               </div>
 
+              {/* 状态筛选 */}
               <div className="flex flex-wrap gap-2">
                 <button
                   onClick={() => setActiveStatus(null)}
                   className={cn(
-                    "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
+                    "px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors",
                     !activeStatus ? "bg-violet-600 text-white" : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                   )}
                 >
@@ -1959,14 +2200,14 @@ const HomePage = () => {
                     key={status.id}
                     onClick={() => setActiveStatus(activeStatus === status.id ? null : status.id)}
                     className={cn(
-                      "px-4 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5",
+                      "px-3 py-2 rounded-lg text-sm font-medium whitespace-nowrap transition-colors flex items-center gap-1.5",
                       activeStatus === status.id
                         ? "bg-violet-600 text-white"
                         : "bg-white text-gray-600 border border-gray-200 hover:bg-gray-50"
                     )}
                   >
                     {getStatusIcon(status.icon)}
-                    {status.label}
+                    <span className="hidden sm:inline">{status.label}</span>
                   </button>
                 ))}
               </div>
@@ -1978,7 +2219,7 @@ const HomePage = () => {
                 <p className="text-gray-500">正在加载笔记...</p>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-2.5 sm:gap-4 lg:gap-6">
                 {sortedNotes.map(note => (
                   <NoteCard
                     key={note.id}
@@ -2004,7 +2245,7 @@ const HomePage = () => {
               <p className="text-gray-600">跟踪装修预算和实际支出，掌控每一分钱的去向。</p>
             </div>
 
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
               <div className="lg:col-span-1 space-y-6">
                 <BudgetSummary expenses={expenses} />
 
@@ -2024,7 +2265,7 @@ const HomePage = () => {
                           <div className="flex justify-between text-sm">
                             <span className="flex items-center gap-1 text-gray-600">
                               {getRoomIcon(room.icon)}
-                              {room.label}
+                              <span className="hidden sm:inline">{room.label}</span>
                             </span>
                             <span className="text-gray-900 font-medium">¥{actual.toLocaleString()}</span>
                           </div>
