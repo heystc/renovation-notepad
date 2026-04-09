@@ -5,6 +5,7 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
+import crypto from 'crypto';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -24,6 +25,52 @@ if (!fs.existsSync(DATA_DIR)) {
 if (!fs.existsSync(UPLOAD_DIR)) {
   fs.mkdirSync(UPLOAD_DIR, { recursive: true });
 }
+
+// --- 用户认证 ---
+const USERS_FILE = path.join(DATA_DIR, 'users.json');
+
+// 默认用户
+const DEFAULT_USERS = {
+  users: [
+    {
+      username: 'admin',
+      passwordHash: crypto.createHash('sha256').update('admin').digest('hex'),
+      isAdmin: true
+    }
+  ]
+};
+
+// 读取用户数据
+const readUsers = () => {
+  if (!fs.existsSync(USERS_FILE)) {
+    fs.writeFileSync(USERS_FILE, JSON.stringify(DEFAULT_USERS, null, 2), 'utf-8');
+    return DEFAULT_USERS;
+  }
+  return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
+};
+
+// 验证 token (简单实现：token 存在于会话中)
+// 存储 token -> username 映射
+const tokenMap = new Map();
+
+const authMiddleware = (req, res, next) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.status(401).json({ success: false, message: '未授权' });
+  }
+  const token = authHeader.substring(7);
+  if (!tokenMap.has(token)) {
+    return res.status(401).json({ success: false, message: '令牌无效或已过期' });
+  }
+  // 将用户名绑定到请求
+  req.user = { username: tokenMap.get(token) };
+  next();
+};
+
+// 密码哈希
+const hashPassword = (password) => {
+  return crypto.createHash('sha256').update(password).digest('hex');
+};
 
 // 配置 multer 图片上传
 const storage = multer.diskStorage({
@@ -154,8 +201,82 @@ const deleteMarkdownFile = (filename) => {
 
 // --- API 路由 ---
 
+// 用户登录
+app.post('/api/login', (req, res) => {
+  try {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ success: false, message: '用户名和密码不能为空' });
+    }
+
+    const usersData = readUsers();
+    const user = usersData.users.find(u => u.username === username);
+
+    if (!user) {
+      return res.status(401).json({ success: false, message: '用户名或密码错误' });
+    }
+
+    const passwordHash = hashPassword(password);
+    if (passwordHash !== user.passwordHash) {
+      return res.status(401).json({ success: false, message: '用户名或密码错误' });
+    }
+
+    // 生成随机 token
+    const token = crypto.randomBytes(32).toString('hex');
+    tokenMap.set(token, username);
+
+    res.json({
+      success: true,
+      token,
+      username: user.username,
+      isAdmin: user.isAdmin
+    });
+  } catch (error) {
+    console.error('Login error:', error);
+    res.status(500).json({ success: false, message: '登录失败' });
+  }
+});
+
+// 获取当前用户信息
+app.get('/api/me', authMiddleware, (req, res) => {
+  const usersData = readUsers();
+  const user = usersData.users.find(u => u.username === req.user.username);
+  res.json({
+    success: true,
+    username: req.user.username,
+    isAdmin: user?.isAdmin || false
+  });
+});
+
+// 验证 token
+app.post('/api/verify', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return res.json({ success: false, message: '未授权' });
+  }
+  const token = authHeader.substring(7);
+  if (tokenMap.has(token)) {
+    const username = tokenMap.get(token);
+    const usersData = readUsers();
+    const user = usersData.users.find(u => u.username === username);
+    res.json({ success: true, valid: true, isAdmin: user?.isAdmin || false });
+  } else {
+    res.json({ success: true, valid: false });
+  }
+});
+
+// 用户登出
+app.post('/api/logout', (req, res) => {
+  const authHeader = req.headers.authorization;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.substring(7);
+    tokenMap.delete(token);
+  }
+  res.json({ success: true, message: '登出成功' });
+});
+
 // 获取所有笔记
-app.get('/api/notes', (req, res) => {
+app.get('/api/notes', authMiddleware, (req, res) => {
   try {
     const index = readNotesIndex();
     const notes = index.notes.map(metadata => ({
@@ -169,6 +290,10 @@ app.get('/api/notes', (req, res) => {
       progress: metadata.progress,
       budget: metadata.budget,
       actualCost: metadata.actualCost,
+      creator: metadata.creator,
+      createdAt: metadata.createdAt,
+      updater: metadata.updater,
+      updatedAt: metadata.updatedAt,
       content: readMarkdownFile(metadata.markdownFile)
     }));
     res.json({ success: true, notes });
@@ -194,11 +319,13 @@ const generateReadableFilename = (title, id) => {
 };
 
 // 创建新笔记
-app.post('/api/notes', (req, res) => {
+app.post('/api/notes', authMiddleware, (req, res) => {
   try {
     const { category, title, content, room, rooms, progress, budget, actualCost } = req.body;
+    const creator = req.user.username;
     const id = Date.now().toString(36) + Math.random().toString(36).substr(2);
     const markdownFile = generateReadableFilename(title, id);
+    const now = new Date().toISOString();
 
     const newNote = {
       id,
@@ -211,7 +338,11 @@ app.post('/api/notes', (req, res) => {
       rooms: rooms || (room ? [room] : undefined),
       progress,
       budget,
-      actualCost
+      actualCost,
+      creator,
+      createdAt: now,
+      updater: creator,
+      updatedAt: now
     };
 
     const metadata = {
@@ -225,6 +356,10 @@ app.post('/api/notes', (req, res) => {
       progress: newNote.progress,
       budget: newNote.budget,
       actualCost: newNote.actualCost,
+      creator,
+      createdAt: now,
+      updater: creator,
+      updatedAt: now,
       markdownFile
     };
 
@@ -243,7 +378,7 @@ app.post('/api/notes', (req, res) => {
 });
 
 // 更新笔记
-app.put('/api/notes/:id', (req, res) => {
+app.put('/api/notes/:id', authMiddleware, (req, res) => {
   try {
     const { id } = req.params;
     const { category, title, content, isPinned, room, rooms, progress, budget, actualCost } = req.body;
@@ -272,6 +407,10 @@ app.put('/api/notes/:id', (req, res) => {
     if (progress) metadata.progress = progress;
     if (budget !== undefined) metadata.budget = budget;
     if (actualCost !== undefined) metadata.actualCost = actualCost;
+    // 更新修改者和修改时间
+    const updater = req.user.username;
+    metadata.updater = updater;
+    metadata.updatedAt = new Date().toISOString();
 
     // 更新 Markdown 文件
     if (content !== undefined) {
@@ -286,6 +425,10 @@ app.put('/api/notes/:id', (req, res) => {
       title: metadata.title,
       date: metadata.date,
       isPinned: metadata.isPinned,
+      creator: metadata.creator,
+      createdAt: metadata.createdAt,
+      updater: metadata.updater,
+      updatedAt: metadata.updatedAt,
       content: content !== undefined ? content : readMarkdownFile(metadata.markdownFile)
     };
 
@@ -296,7 +439,7 @@ app.put('/api/notes/:id', (req, res) => {
 });
 
 // 删除笔记
-app.delete('/api/notes/:id', (req, res) => {
+app.delete('/api/notes/:id', authMiddleware, (req, res) => {
   try {
     const { id } = req.params;
 
@@ -318,7 +461,7 @@ app.delete('/api/notes/:id', (req, res) => {
 });
 
 // 导入单个Markdown文件
-app.post('/api/import/markdown', (req, res) => {
+app.post('/api/import/markdown', authMiddleware, (req, res) => {
   try {
     const { title, content, category = 'idea' } = req.body;
 
@@ -358,7 +501,7 @@ app.post('/api/import/markdown', (req, res) => {
 });
 
 // 批量导入Markdown文件（通过base64）
-app.post('/api/import/batch', (req, res) => {
+app.post('/api/import/batch', authMiddleware, (req, res) => {
   try {
     const { files } = req.body; // [{ title, content, category }, ...]
 
@@ -404,7 +547,7 @@ app.post('/api/import/batch', (req, res) => {
 });
 
 // 获取服务器状态
-app.get('/api/status', (req, res) => {
+app.get('/api/status', authMiddleware, (req, res) => {
   const index = readNotesIndex();
   res.json({
     success: true,
@@ -416,7 +559,7 @@ app.get('/api/status', (req, res) => {
 });
 
 // 获取设置
-app.get('/api/settings', (req, res) => {
+app.get('/api/settings', authMiddleware, (req, res) => {
   try {
     const settings = readSettings();
     res.json({ success: true, settings });
@@ -426,7 +569,7 @@ app.get('/api/settings', (req, res) => {
 });
 
 // 更新设置
-app.put('/api/settings', (req, res) => {
+app.put('/api/settings', authMiddleware, (req, res) => {
   try {
     const { categories, rooms, statuses } = req.body;
     const settings = readSettings();
@@ -443,7 +586,7 @@ app.put('/api/settings', (req, res) => {
 });
 
 // 上传图片
-app.post('/api/upload', upload.single('image'), (req, res) => {
+app.post('/api/upload', authMiddleware, upload.single('image'), (req, res) => {
   try {
     if (!req.file) {
       return res.status(400).json({
@@ -470,7 +613,7 @@ app.post('/api/upload', upload.single('image'), (req, res) => {
 });
 
 // 删除图片
-app.delete('/api/upload/:filename', (req, res) => {
+app.delete('/api/upload/:filename', authMiddleware, (req, res) => {
   try {
     const { filename } = req.params;
     const filePath = path.join(UPLOAD_DIR, filename);
@@ -489,6 +632,174 @@ app.delete('/api/upload/:filename', (req, res) => {
       success: false,
       message: 'Failed to delete image'
     });
+  }
+});
+
+// --- 用户管理 API ---
+
+// 获取用户列表
+app.get('/api/users', authMiddleware, (req, res) => {
+  try {
+    const usersData = readUsers();
+    // 返回用户列表，不返回密码哈希
+    const users = usersData.users.map(u => ({
+      username: u.username,
+      isAdmin: u.isAdmin
+    }));
+    res.json({ success: true, users });
+  } catch (error) {
+    console.error('Error getting users:', error);
+    res.status(500).json({ success: false, message: 'Failed to get users' });
+  }
+});
+
+// 创建用户
+app.post('/api/users', authMiddleware, (req, res) => {
+  try {
+    const { username, password, isAdmin } = req.body;
+
+    if (!username || !password) {
+      return res.status(400).json({ success: false, message: '用户名和密码不能为空' });
+    }
+
+    const usersData = readUsers();
+
+    // 检查用户名是否已存在
+    if (usersData.users.find(u => u.username === username)) {
+      return res.status(400).json({ success: false, message: '用户名已存在' });
+    }
+
+    const newUser = {
+      username,
+      passwordHash: hashPassword(password),
+      isAdmin: isAdmin || false
+    };
+
+    usersData.users.push(newUser);
+    fs.writeFileSync(USERS_FILE, JSON.stringify(usersData, null, 2), 'utf-8');
+
+    res.json({
+      success: true,
+      user: { username: newUser.username, isAdmin: newUser.isAdmin }
+    });
+  } catch (error) {
+    console.error('Error creating user:', error);
+    res.status(500).json({ success: false, message: 'Failed to create user' });
+  }
+});
+
+// 删除用户
+app.delete('/api/users/:username', authMiddleware, (req, res) => {
+  try {
+    const { username } = req.params;
+    const currentUsername = req.auth?.username; // 这里暂时不需要，前端控制不能删自己
+
+    if (username === 'admin') {
+      return res.status(400).json({ success: false, message: '不能删除默认admin用户' });
+    }
+
+    const usersData = readUsers();
+    usersData.users = usersData.users.filter(u => u.username !== username);
+    fs.writeFileSync(USERS_FILE, JSON.stringify(usersData, null, 2), 'utf-8');
+
+    res.json({ success: true, message: '删除成功' });
+  } catch (error) {
+    console.error('Error deleting user:', error);
+    res.status(500).json({ success: false, message: 'Failed to delete user' });
+  }
+});
+
+// 修改用户信息（修改isAdmin）
+app.put('/api/users/:username', authMiddleware, (req, res) => {
+  try {
+    const { username } = req.params;
+    const { isAdmin } = req.body;
+
+    const usersData = readUsers();
+    const userIndex = usersData.users.findIndex(u => u.username === username);
+
+    if (userIndex === -1) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+
+    usersData.users[userIndex].isAdmin = isAdmin;
+    fs.writeFileSync(USERS_FILE, JSON.stringify(usersData, null, 2), 'utf-8');
+
+    res.json({
+      success: true,
+      user: {
+        username: usersData.users[userIndex].username,
+        isAdmin: usersData.users[userIndex].isAdmin
+      }
+    });
+  } catch (error) {
+    console.error('Error updating user:', error);
+    res.status(500).json({ success: false, message: 'Failed to update user' });
+  }
+});
+
+// 修改密码（当前登录用户修改自己的密码）
+app.post('/api/change-password', authMiddleware, (req, res) => {
+  try {
+    const { oldPassword, newPassword } = req.body;
+    const username = req.user.username;
+
+    const usersData = readUsers();
+    const user = usersData.users.find(u => u.username === username);
+
+    if (!user) {
+      return res.status(404).json({ success: false, message: '用户不存在' });
+    }
+
+    // 验证旧密码
+    if (hashPassword(oldPassword) !== user.passwordHash) {
+      return res.status(401).json({ success: false, message: '原密码错误' });
+    }
+
+    // 更新密码
+    user.passwordHash = hashPassword(newPassword);
+    fs.writeFileSync(USERS_FILE, JSON.stringify(usersData, null, 2), 'utf-8');
+
+    res.json({ success: true, message: '密码修改成功' });
+  } catch (error) {
+    console.error('Error changing password:', error);
+    res.status(500).json({ success: false, message: 'Failed to change password' });
+  }
+});
+
+// 获取单个笔记
+app.get('/api/notes/:id', authMiddleware, (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = readNotesIndex();
+    const metadata = index.notes.find(n => n.id === id);
+
+    if (!metadata) {
+      return res.status(404).json({ success: false, message: 'Note not found' });
+    }
+
+    const note = {
+      id: metadata.id,
+      category: metadata.category,
+      title: metadata.title,
+      date: metadata.date,
+      isPinned: metadata.isPinned,
+      room: metadata.room,
+      rooms: metadata.rooms,
+      progress: metadata.progress,
+      budget: metadata.budget,
+      actualCost: metadata.actualCost,
+      creator: metadata.creator,
+      createdAt: metadata.createdAt,
+      updater: metadata.updater,
+      updatedAt: metadata.updatedAt,
+      content: readMarkdownFile(metadata.markdownFile)
+    };
+
+    res.json({ success: true, note });
+  } catch (error) {
+    console.error('Error reading note:', error);
+    res.status(500).json({ success: false, message: 'Failed to read note' });
   }
 });
 

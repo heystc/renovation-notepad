@@ -5,3 +5,49 @@
 body {
   margin: 0;
 }
+
+@layer components {
+  .markdown-body h1 {
+    @apply text-h1 text-gray-900 my-6;
+  }
+
+  .markdown-body h2 {
+    @apply text-h2 text-gray-900 my-5;
+  }
+
+  .markdown-body h3 {
+    @apply text-h3 text-gray-900 my-4;
+  }
+
+  .markdown-body p {
+    @apply my-2 leading-relaxed text-gray-800;
+  }
+
+  .markdown-body strong {
+    @apply font-semibold text-gray-900;
+  }
+
+  .markdown-body a {
+    @apply text-blue-600 underline hover:text-blue-700;
+  }
+
+  .markdown-body ul {
+    @apply my-3 pl-6 list-disc;
+  }
+
+  .markdown-body ol {
+    @apply my-3 pl-6 list-decimal;
+  }
+
+  .markdown-body li {
+    @apply my-1 text-gray-800;
+  }
+
+  .markdown-body blockquote {
+    @apply border-l-4 border-gray-300 pl-4 my-4 text-gray-600 italic bg-gray-50 py-1 rounded-r;
+  }
+
+  .markdown-body img {
+    @apply max-w-full rounded-lg shadow-md my-4;
+  }
+}
