@@ -238,7 +238,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                     viewMode === 'notes' ? "bg-white shadow-sm text-gray-900" : "text-gray-600"
                   )}
                 >
-                  <FileUp className="w-4 h-4" />
+                  <NotebookPen className="w-4 h-4" />
                   <span className="hidden sm:inline">笔记</span>
                 </button>
                 <button

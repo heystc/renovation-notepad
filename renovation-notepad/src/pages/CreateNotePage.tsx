@@ -46,7 +46,7 @@ export const CreateNotePage = () => {
         setContent(note.content);
         setCategory(note.category);
         setRooms(note.rooms || (note.room ? [note.room] : []));
-        setProgress(note.progress);
+        setProgress(note.progress || settings.statuses[0]?.id || '');
         setBudget(note.budget ? String(note.budget) : '');
         setActualCost(note.actualCost ? String(note.actualCost) : '');
       }
