@@ -534,6 +534,36 @@ export const HomePage: React.FC<HomePageProps> = ({
                     )}
                   </div>
                 )}
+
+                {/* 筛选收起时显示已选标签 */}
+                {!isFiltersOpen && (activeCategory !== null || activeRooms.length > 0 || activeStatus !== null) && (
+                  <div className="flex flex-wrap gap-2 mt-2">
+                    {/* 已选分类 */}
+                    {activeCategory !== null && (
+                      <span className={cn(
+                        "px-3 py-1 rounded-full text-xs border",
+                        settings.categories.find(c => c.id === activeCategory)?.color || "bg-white border-gray-200 text-gray-600"
+                      )}>
+                        {settings.categories.find(c => c.id === activeCategory)?.label}
+                      </span>
+                    )}
+                    {/* 已选房间 */}
+                    {activeRooms.map(roomId => (
+                      <span key={roomId} className="px-3 py-1 rounded-full text-xs border border-gray-200 bg-white text-gray-600">
+                        {settings.rooms.find(r => r.id === roomId)?.label}
+                      </span>
+                    ))}
+                    {/* 已选状态 */}
+                    {activeStatus !== null && (
+                      <span className={cn(
+                        "px-3 py-1 rounded-full text-xs border",
+                        settings.statuses.find(s => s.id === activeStatus)?.color || "bg-white border-gray-200 text-gray-600"
+                      )}>
+                        {settings.statuses.find(s => s.id === activeStatus)?.label}
+                      </span>
+                    )}
+                  </div>
+                )}
               </div>
             )}
 

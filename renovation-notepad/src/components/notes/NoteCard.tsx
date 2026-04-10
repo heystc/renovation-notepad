@@ -74,10 +74,13 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, settings, onTogglePin,
             <button
               onClick={(e) => {
                 e.stopPropagation();
-                // 总是通知其他菜单关闭，只保持当前这个打开
+                // 先通知其他菜单关闭，等事件处理完成后再切换当前菜单状态
                 const event = new CustomEvent(CLOSE_OTHER_MENUS, { detail: { openedId: note.id } });
                 document.dispatchEvent(event);
-                setShowMenu(!showMenu);
+                // setTimeout 让所有其他卡片先完成关闭，再更新当前状态
+                setTimeout(() => {
+                  setShowMenu(!showMenu);
+                }, 0);
               }}
               className="p-2 hover:bg-gray-100 rounded transition-colors active:bg-gray-200"
             >
