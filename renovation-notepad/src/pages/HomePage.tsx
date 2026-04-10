@@ -39,6 +39,26 @@ export const HomePage: React.FC<HomePageProps> = ({
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isFiltersOpen, setIsFiltersOpen] = useState(true);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+
+  // 移动端默认收起筛选
+  useEffect(() => {
+    const isMobile = window.innerWidth < 640;
+    if (isMobile) {
+      setIsFiltersOpen(false);
+    }
+  }, []);
+
+  // 点击外部关闭用户菜单
+  React.useEffect(() => {
+    const handleClickOutside = () => {
+      setIsUserMenuOpen(false);
+    };
+    if (isUserMenuOpen) {
+      document.addEventListener('click', handleClickOutside);
+      return () => document.removeEventListener('click', handleClickOutside);
+    }
+  }, [isUserMenuOpen]);
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [activeRooms, setActiveRooms] = useState<string[]>([]);
   const [activeStatus, setActiveStatus] = useState<string | null>(null);
@@ -201,16 +221,98 @@ export const HomePage: React.FC<HomePageProps> = ({
       {/* 顶部导航 - 单行布局 */}
       <nav className="bg-white border-b border-gray-200 sticky top-0 z-40">
         <div className="max-w-6xl mx-auto px-4">
-          <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 py-2 sm:py-0 sm:h-16 sm:items-center">
-            {/* Logo */}
-            <div className="flex items-center gap-2 flex-shrink-0">
-              <div className="bg-blue-600 text-white p-1.5 rounded-lg">
-                <NotebookPen className="w-5 h-5" />
+          <div className="flex flex-col gap-2 py-2 sm:py-0 sm:flex-row sm:h-16 sm:items-center">
+            {/* 移动端第一行：Logo + 按钮，PC端左侧：Logo */}
+            <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3 flex-shrink-0">
+              {/* Logo */}
+              <div className="flex items-center gap-2 flex-shrink-0">
+                <div className="bg-blue-600 text-white p-1.5 rounded-lg">
+                  <NotebookPen className="w-5 h-5" />
+                </div>
+                <h1 className="text-xl font-bold text-gray-900 hidden sm:block">装修记事本</h1>
               </div>
-              <h1 className="text-xl font-bold text-gray-900">装修记事本</h1>
+
+              {/* 移动端：按钮和Logo同排，PC端不显示这里（在右侧显示） */}
+              <div className="flex items-center gap-2 sm:hidden">
+                <div className="flex bg-gray-100 rounded-lg p-1">
+                  <button
+                    onClick={() => setViewMode('notes')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2",
+                      viewMode === 'notes' ? "bg-white shadow-sm text-gray-900" : "text-gray-600"
+                    )}
+                  >
+                    <NotebookPen className="w-4 h-4" />
+                  </button>
+                  <button
+                    onClick={() => setViewMode('budget')}
+                    className={cn(
+                      "px-3 py-1.5 rounded-md text-sm font-medium transition-colors flex items-center gap-2",
+                      viewMode === 'budget' ? "bg-white shadow-sm text-gray-900" : "text-gray-600"
+                    )}
+                  >
+                    <DollarSign className="w-4 h-4" />
+                  </button>
+                </div>
+
+                <button
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2 flex-shrink-0"
+                >
+                  <Plus className="w-4 h-4" />
+                </button>
+
+                <label className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer" title="批量导入">
+                  <FileUp className="w-5 h-5" />
+                  <input
+                    type="file"
+                    accept=".md"
+                    multiple
+                    className="hidden"
+                    onChange={(e) => e.target.files && handleBatchImport(e.target.files)}
+                  />
+                </label>
+
+                <button
+                  onClick={() => setIsSettingsModalOpen(true)}
+                  className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors"
+                  title="设置"
+                >
+                  <SettingsIcon className="w-5 h-5" />
+                </button>
+
+                {/* 用户菜单 - 折叠显示 */}
+                <div className="relative">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setIsUserMenuOpen(!isUserMenuOpen);
+                    }}
+                    className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
+                    title={currentUser}
+                  >
+                    <span className="text-xs font-medium text-gray-600">{currentUser.charAt(0)}</span>
+                  </button>
+                  {isUserMenuOpen && (
+                    <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setIsUserMenuOpen(false);
+                          onLogout();
+                        }}
+                        className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                      >
+                        <LogOut className="w-4 h-4" />
+                        退出登录
+                      </button>
+                    </div>
+                  )}
+                </div>
+              </div>
             </div>
 
-            {/* 搜索框 */}
+            {/* 移动端第二行：搜索，PC端：中间搜索区 */}
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
               <input
@@ -228,8 +330,8 @@ export const HomePage: React.FC<HomePageProps> = ({
               />
             </div>
 
-            {/* 右侧操作区 */}
-            <div className="flex items-center gap-2 flex-shrink-0 pb-2 sm:pb-0">
+            {/* PC端右侧：按钮区，移动端不显示 */}
+            <div className="hidden sm:flex items-center gap-2 flex-shrink-0">
               <div className="flex bg-gray-100 rounded-lg p-1">
                 <button
                   onClick={() => setViewMode('notes')}
@@ -261,7 +363,6 @@ export const HomePage: React.FC<HomePageProps> = ({
                 <span className="hidden sm:inline">新建笔记</span>
               </button>
 
-
               <label className="p-2 text-gray-600 hover:bg-gray-100 rounded-lg transition-colors cursor-pointer" title="批量导入">
                 <FileUp className="w-5 h-5" />
                 <input
@@ -282,16 +383,34 @@ export const HomePage: React.FC<HomePageProps> = ({
                 <SettingsIcon className="w-5 h-5" />
               </button>
               <div className="w-px h-6 bg-gray-200" />
-              <div className="hidden sm:flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full">
-                <span className="text-sm text-gray-600">{currentUser}</span>
+              {/* 用户菜单 - 折叠显示 */}
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsUserMenuOpen(!isUserMenuOpen);
+                  }}
+                  className="flex items-center gap-2 px-3 py-1.5 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"
+                  title={currentUser}
+                >
+                  <span className="text-sm text-gray-600">{currentUser}</span>
+                </button>
+                {isUserMenuOpen && (
+                  <div className="absolute right-0 top-full mt-1 w-32 bg-white rounded-lg shadow-lg border border-gray-200 py-1 z-50">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setIsUserMenuOpen(false);
+                        onLogout();
+                      }}
+                      className="w-full text-left px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 flex items-center gap-2"
+                    >
+                      <LogOut className="w-4 h-4" />
+                      退出登录
+                    </button>
+                  </div>
+                )}
               </div>
-              <button
-                onClick={onLogout}
-                className="p-2 text-gray-600 hover:bg-red-100 hover:text-red-600 rounded-lg transition-colors"
-                title="退出登录"
-              >
-                <LogOut className="w-5 h-5" />
-              </button>
             </div>
           </div>
         </div>
@@ -440,6 +559,15 @@ export const HomePage: React.FC<HomePageProps> = ({
           </div>
         )}
       </main>
+
+      {/* 移动端底部悬浮新建按钮 */}
+      <button
+        onClick={() => setIsAddModalOpen(true)}
+        className="sm:hidden fixed bottom-6 left-1/2 -translate-x-1/2 w-14 h-14 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 active:scale-95 transition-all flex items-center justify-center z-40"
+        title="新建笔记"
+      >
+        <Plus className="w-6 h-6" />
+      </button>
 
       <AddNoteModal
         isOpen={isAddModalOpen}

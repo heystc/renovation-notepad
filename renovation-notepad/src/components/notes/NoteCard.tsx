@@ -1,5 +1,5 @@
-import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
+import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { Pin, MoreVertical, DollarSign } from 'lucide-react';
 import type { Note, Settings } from '../../types';
 import { clsx, type ClassValue } from 'clsx';
@@ -12,6 +12,9 @@ function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// 事件名称，用于通知关闭其他菜单
+const CLOSE_OTHER_MENUS = 'close-other-note-menus';
+
 interface NoteCardProps {
   note: Note;
   settings: Settings;
@@ -21,16 +24,36 @@ interface NoteCardProps {
 
 export const NoteCard: React.FC<NoteCardProps> = ({ note, settings, onTogglePin, onUpdateStatus }) => {
   const [showMenu, setShowMenu] = useState(false);
+  const navigate = useNavigate();
+
+  // 监听关闭其他菜单事件，当收到事件且不是自己，则关闭
+  useEffect(() => {
+    const handleCloseOther = (e: CustomEvent<{ openedId: string }>) => {
+      if (e.detail.openedId !== note.id) {
+        setShowMenu(false);
+      }
+    };
+
+    document.addEventListener(CLOSE_OTHER_MENUS, handleCloseOther as EventListener);
+    return () => document.removeEventListener(CLOSE_OTHER_MENUS, handleCloseOther as EventListener);
+  }, [note.id]);
+
+  const handleCardClick = () => {
+    // 如果菜单已打开，点击卡片关闭菜单，不跳转
+    if (showMenu) {
+      setShowMenu(false);
+    } else {
+      navigate(`/note/${note.id}`);
+    }
+  };
 
   return (
-    <Link
-      to={`/note/${note.id}`}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="block active:opacity-80"
+    <div
+      onClick={handleCardClick}
+      className="block active:opacity-80 cursor-pointer"
     >
       <div className={cn(
-        "bg-white rounded-xl border p-3 sm:p-4 shadow-sm hover:shadow-md transition-all relative cursor-pointer",
+        "bg-white rounded-xl border p-3 sm:p-4 shadow-sm hover:shadow-md transition-all relative",
         note.isPinned ? "border-amber-300 ring-1 ring-amber-100" : "border-gray-200"
       )}>
         {note.isPinned && (
@@ -51,6 +74,9 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, settings, onTogglePin,
             <button
               onClick={(e) => {
                 e.stopPropagation();
+                // 总是通知其他菜单关闭，只保持当前这个打开
+                const event = new CustomEvent(CLOSE_OTHER_MENUS, { detail: { openedId: note.id } });
+                document.dispatchEvent(event);
                 setShowMenu(!showMenu);
               }}
               className="p-2 hover:bg-gray-100 rounded transition-colors active:bg-gray-200"
@@ -64,8 +90,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, settings, onTogglePin,
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onTogglePin(note.id);
                       setShowMenu(false);
+                      onTogglePin(note.id);
                     }}
                     className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center gap-2 active:bg-gray-100"
                   >
@@ -78,8 +104,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, settings, onTogglePin,
                       key={status.id}
                       onClick={(e) => {
                         e.stopPropagation();
-                        onUpdateStatus(note.id, status.id);
                         setShowMenu(false);
+                        onUpdateStatus(note.id, status.id);
                       }}
                       className="w-full px-4 py-3 text-left text-sm hover:bg-gray-50 flex items-center gap-2 active:bg-gray-100"
                     >
@@ -89,7 +115,9 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, settings, onTogglePin,
                     </button>
                   ))}
                 </div>
-                <div className="fixed inset-0 z-0" onClick={() => setShowMenu(false)} />
+                <div className="fixed inset-0 z-0" onClick={() => {
+                  setShowMenu(false);
+                }} />
               </>
             )}
           </div>
@@ -120,7 +148,7 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, settings, onTogglePin,
           <span className="text-xs text-gray-400">{note.date}</span>
         </div>
       </div>
-    </Link>
+    </div>
   );
 };
 
