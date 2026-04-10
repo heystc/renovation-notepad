@@ -3,7 +3,7 @@ import { Plus, Search, Settings as SettingsIcon, DollarSign, LogOut, FileUp, Fil
 import type { Note, Settings, ViewMode } from '../types';
 import { DEFAULT_SETTINGS, MOCK_NOTES, MOCK_EXPENSES } from '../constants/defaultData';
 import { getRoomIcon, getStatusIcon } from '../utils/icons';
-import api from '../utils/api';
+import { getNotes, saveNotes, addNote, updateNote, getSettings, saveSettings } from '../utils/storage';
 import NoteCard from '../components/notes/NoteCard';
 import AddNoteModal from '../components/notes/AddNoteModal';
 import SettingsModal from '../components/settings/SettingsModal';
@@ -64,66 +64,35 @@ export const HomePage: React.FC<HomePageProps> = ({
   const [activeStatus, setActiveStatus] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  const loadSettings = async () => {
-    try {
-      const res = await api.get('/settings');
-      if (res.data.success) {
-        setSettings(res.data.settings);
-      }
-    } catch (error) {
-      console.error('加载设置失败:', error);
-      setSettings(DEFAULT_SETTINGS);
-    }
+  const loadSettings = () => {
+    const saved = getSettings(DEFAULT_SETTINGS);
+    setSettings(saved);
   };
 
-  const loadNotes = async () => {
-    try {
-      const res = await api.get('/notes');
-      if (res.data.success) {
-        setNotes(res.data.notes);
-      }
-    } catch (error) {
-      console.error('加载笔记失败:', error);
-      setNotes(MOCK_NOTES);
-    } finally {
-      setIsLoading(false);
+  const loadNotes = () => {
+    let saved = getNotes();
+    if (saved.length === 0) {
+      // 第一次打开，使用MOCK数据初始化
+      saved = MOCK_NOTES;
+      saveNotes(saved);
     }
+    setNotes(saved);
+    setIsLoading(false);
   };
 
   const handleUpdateSettings = async (newSettings: Settings) => {
-    try {
-      const res = await api.put('/settings', newSettings);
-      if (res.data.success) {
-        setSettings(res.data.settings);
-      }
-    } catch (error) {
-      console.error('保存设置失败:', error);
-      setSettings(newSettings);
-    }
+    saveSettings(newSettings);
+    setSettings(newSettings);
   };
 
   const handleAddNote = async (newNote: Note) => {
-    try {
-      const res = await api.post('/notes', {
-        category: newNote.category,
-        title: newNote.title,
-        content: newNote.content,
-        room: newNote.room,
-        progress: newNote.progress,
-        budget: newNote.budget,
-        actualCost: newNote.actualCost,
-      });
-      if (res.data.success) {
-        await loadNotes();
-      }
-    } catch (error) {
-      console.error('添加笔记失败:', error);
-      const noteToAdd: Note = {
-        ...newNote,
-        id: Date.now().toString(),
-      };
-      setNotes([noteToAdd, ...notes]);
-    }
+    const noteToAdd: Note = {
+      ...newNote,
+      id: Date.now().toString(),
+      isPinned: false,
+    };
+    addNote(noteToAdd);
+    setNotes([noteToAdd, ...notes]);
   };
 
   const handleTogglePin = (id: string) => {
@@ -131,7 +100,10 @@ export const HomePage: React.FC<HomePageProps> = ({
       note.id === id ? { ...note, isPinned: !note.isPinned } : note
     );
     setNotes(updatedNotes);
-    api.put(`/notes/${id}`, { isPinned: updatedNotes.find(n => n.id === id)?.isPinned }).catch(err => console.error(err));
+    saveNotes(updatedNotes);
+    if (updatedNotes.find(n => n.id === id)?.isPinned !== undefined) {
+      updateNote(id, { isPinned: updatedNotes.find(n => n.id === id)!.isPinned });
+    }
   };
 
   const handleUpdateStatus = (id: string, status: string) => {
@@ -139,7 +111,8 @@ export const HomePage: React.FC<HomePageProps> = ({
       note.id === id ? { ...note, progress: status } : note
     );
     setNotes(updatedNotes);
-    api.put(`/notes/${id}`, { progress: status }).catch(err => console.error(err));
+    saveNotes(updatedNotes);
+    updateNote(id, { progress: status });
   };
 
   const handleRoomToggle = (roomId: string) => {
@@ -172,20 +145,19 @@ export const HomePage: React.FC<HomePageProps> = ({
       importData.push({ title, content: noteContent, category: 'idea' });
     }
 
-    for (const item of importData) {
-      try {
-        await api.post('/notes', {
-          title: item.title,
-          content: item.content,
-          category: item.category,
-          date: new Date().toISOString().split('T')[0],
-        });
-      } catch (error) {
-        console.error('导入失败:', item.title, error);
-      }
-    }
+    importData.forEach(item => {
+      const newNote: Note = {
+        id: Date.now().toString() + Math.random(),
+        title: item.title,
+        content: item.content,
+        category: item.category,
+        date: new Date().toISOString().split('T')[0],
+        isPinned: false,
+      };
+      addNote(newNote);
+    });
 
-    await loadNotes();
+    loadNotes();
     setIsImportModalOpen(false);
     alert(`成功导入 ${importData.length} 个文件`);
   };

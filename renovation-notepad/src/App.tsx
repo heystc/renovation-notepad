@@ -1,14 +1,12 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { Routes, Route, Navigate } from 'react-router-dom';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 // Import types and constants
-import type { User, ViewMode } from './types';
-import api from './utils/api';
+import type { ViewMode } from './types';
 
 // Import pages
-import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import CreateNotePage from './pages/CreateNotePage';
 import NoteDetailPage from './pages/NoteDetailPage';
@@ -19,55 +17,14 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 function App() {
-  const [user, setUser] = useState<User | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
   const [viewMode, setViewMode] = useState<ViewMode>('notes');
   const [searchQuery, setSearchQuery] = useState('');
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [_, setIsImportModalOpen] = useState(false);
-
-  // Check for existing auth
-  useEffect(() => {
-    const token = localStorage.getItem('auth_token');
-    if (token) {
-      // Verify token by getting current user
-      api.get('/me').then(res => {
-        if (res.data.success) {
-          setUser({
-            username: res.data.username,
-            isAdmin: res.data.isAdmin,
-          });
-        }
-      }).catch(() => {
-        localStorage.removeItem('auth_token');
-      }).finally(() => {
-        setIsLoading(false);
-      });
-    } else {
-      setIsLoading(false);
-    }
-  }, []);
-
-  const handleLogin = (username: string, isAdmin: boolean) => {
-    setUser({ username, isAdmin });
-  };
+  const [isImportModalOpen, setIsImportModalOpen] = useState(false);
 
   const handleLogout = () => {
-    localStorage.removeItem('auth_token');
-    setUser(null);
+    // No-op in standalone version
   };
-
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
-        <div className="text-gray-500">加载中...</div>
-      </div>
-    );
-  }
-
-  if (!user) {
-    return <LoginPage onLogin={handleLogin} />;
-  }
 
   return (
     <Routes>
@@ -82,8 +39,8 @@ function App() {
             isSettingsModalOpen={isSettingsModalOpen}
             setIsSettingsModalOpen={setIsSettingsModalOpen}
             setIsImportModalOpen={setIsImportModalOpen}
-            currentUser={user.username}
-            isCurrentUserAdmin={user.isAdmin}
+            currentUser="user"
+            isCurrentUserAdmin={true}
             onLogout={handleLogout}
           />
         }
