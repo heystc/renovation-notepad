@@ -18,15 +18,20 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
   const [isDragging, setIsDragging] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const contentRef = useRef<string>(content);
+
+  // 同步 ref 保存最新的 content
+  contentRef.current = content;
 
   const insertAtCursor = (before: string, after = '') => {
     const textarea = textareaRef.current || document.getElementById('markdown-editor') as HTMLTextAreaElement;
     if (!textarea) return;
 
+    const currentContent = contentRef.current;
     const start = textarea.selectionStart;
     const end = textarea.selectionEnd;
-    const selectedText = content.substring(start, end);
-    const newText = content.substring(0, start) + before + selectedText + after + content.substring(end);
+    const selectedText = currentContent.substring(start, end);
+    const newText = currentContent.substring(0, start) + before + selectedText + after + currentContent.substring(end);
 
     onChange(newText);
 
@@ -41,9 +46,79 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
     }, 0);
   };
 
+  // 压缩图片
+  const compressImage = async (file: File): Promise<Blob> => {
+    // 如果图片较小，不压缩（小于 1MB）
+    if (file.size < 1024 * 1024) {
+      return file;
+    }
+
+    return new Promise((resolve) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          // 计算压缩后的尺寸，保持宽高比，最大长边不超过 1920px
+          let maxWidth = 1920;
+          let maxHeight = 1920;
+          let width = img.width;
+          let height = img.height;
+
+          if (width > height) {
+            if (width > maxWidth) {
+              height = height * (maxWidth / width);
+              width = maxWidth;
+            }
+          } else {
+            if (height > maxHeight) {
+              width = width * (maxHeight / height);
+              height = maxHeight;
+            }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(file);
+            return;
+          }
+
+          // 绘制图片
+          ctx.drawImage(img, 0, 0, width, height);
+
+          // 输出为 JPEG，质量 0.9，更好的画质，文件大小仍可控
+          canvas.toBlob((blob) => {
+            if (blob) {
+              // 如果压缩后更大，返回原文件
+              resolve(blob.size < file.size ? blob : file);
+            } else {
+              resolve(file);
+            }
+          }, 'image/jpeg', 0.9);
+        };
+        img.onerror = () => {
+          resolve(file);
+        };
+        img.src = e.target?.result as string;
+      };
+      reader.onerror = () => {
+        resolve(file);
+      };
+      reader.readAsDataURL(file);
+    });
+  };
+
   const uploadImage = async (file: File): Promise<string> => {
+    // 先压缩图片
+    const compressedBlob = await compressImage(file);
+    // 创建新的 File 对象
+    const compressedFile = new File([compressedBlob], file.name, { type: compressedBlob.type || file.type });
+
     const formData = new FormData();
-    formData.append('image', file);
+    formData.append('image', compressedFile);
     const response = await api.post('/upload', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -123,17 +198,24 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
     }
   };
 
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
   const handleImageButtonClick = () => {
-    const input = document.createElement('input');
-    input.type = 'file';
-    input.accept = 'image/*';
-    input.onchange = async (e: any) => {
-      const file = e.target.files?.[0];
-      if (file) {
+    fileInputRef.current?.click();
+  };
+
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i];
+      if (file.type.startsWith('image/')) {
         await insertImage(file);
       }
-    };
-    input.click();
+    }
+    // 清空 value，允许重复选择相同文件
+    e.target.value = '';
   };
 
   return (
@@ -152,6 +234,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
       )}
       <div className="flex flex-wrap gap-1 p-2 bg-gray-50 border-b border-gray-200">
         <button
+          type="button"
           onClick={() => insertAtCursor('**', '**')}
           className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
           title="粗体"
@@ -159,6 +242,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
           <Bold className="w-4 h-4" />
         </button>
         <button
+          type="button"
           onClick={() => insertAtCursor('*', '*')}
           className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
           title="斜体"
@@ -167,6 +251,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         </button>
         <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
+          type="button"
           onClick={() => insertAtCursor('# ')}
           className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors text-sm font-bold active:bg-gray-300"
           title="标题"
@@ -174,6 +259,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
           H1
         </button>
         <button
+          type="button"
           onClick={() => insertAtCursor('## ')}
           className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors text-sm font-bold active:bg-gray-300"
           title="二级标题"
@@ -182,6 +268,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         </button>
         <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
+          type="button"
           onClick={() => insertAtCursor('- ')}
           className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
           title="无序列表"
@@ -189,6 +276,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
           <List className="w-4 h-4" />
         </button>
         <button
+          type="button"
           onClick={() => insertAtCursor('1. ')}
           className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
           title="有序列表"
@@ -197,6 +285,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         </button>
         <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
+          type="button"
           onClick={() => {
             const url = prompt('输入链接地址:');
             if (url) insertAtCursor('[链接文字](', ')');
@@ -207,6 +296,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
           <LinkIcon className="w-4 h-4" />
         </button>
         <button
+          type="button"
           onClick={handleImageButtonClick}
           disabled={isUploading}
           className={cn(
@@ -235,6 +325,14 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
       <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
         💡 提示: 支持 <kbd className="px-2 py-0.5 bg-gray-200 rounded">Ctrl+V</kbd> 粘贴剪贴板图片 · 拖拽图片到此处插入
       </div>
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/*"
+        multiple
+        onChange={handleFileChange}
+        className="hidden"
+      />
     </div>
   );
 };

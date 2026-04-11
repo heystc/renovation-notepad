@@ -142,6 +142,17 @@ export const HomePage: React.FC<HomePageProps> = ({
     api.put(`/notes/${id}`, { progress: status }).catch(err => console.error(err));
   };
 
+  const handleDelete = async (id: string) => {
+    try {
+      await api.delete(`/notes/${id}`);
+      setNotes(prev => prev.filter(note => note.id !== id));
+    } catch (error) {
+      console.error('删除失败:', error);
+      // 即使API失败也在前端删除
+      setNotes(prev => prev.filter(note => note.id !== id));
+    }
+  };
+
   const handleRoomToggle = (roomId: string) => {
     setActiveRooms(prev =>
       prev.includes(roomId) ? prev.filter(r => r !== roomId) : [...prev, roomId]
@@ -582,6 +593,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                     settings={settings}
                     onTogglePin={handleTogglePin}
                     onUpdateStatus={handleUpdateStatus}
+                    onDelete={handleDelete}
                   />
                 ))}
               </div>
