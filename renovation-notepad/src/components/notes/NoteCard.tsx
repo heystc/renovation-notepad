@@ -6,7 +6,7 @@ import type { Note, Settings } from '../../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import { CategoryBadge } from '../badges/CategoryBadge';
-import { RoomBadge } from '../badges/RoomBadge';
+import { TagBadge } from '../badges/TagBadge';
 import { ProgressBadge } from '../badges/ProgressBadge';
 
 function cn(...inputs: ClassValue[]) {
@@ -145,8 +145,8 @@ export const NoteCard: React.FC<NoteCardProps> = ({ note, settings, onTogglePin,
         <div className="flex justify-between items-start mb-3 flex-shrink-0">
           <div className="flex items-center gap-2 flex-wrap">
             <CategoryBadge category={note.category} categories={settings.categories} />
-            {(note.rooms || (note.room ? [note.room] : [])).map(roomId => (
-              <RoomBadge key={roomId} room={roomId} rooms={settings.rooms} />
+            {(note.tags || note.rooms || (note.tag || note.room ? [note.tag || note.room] : [])).filter(Boolean).map(tagId => (
+              <TagBadge key={tagId} tagId={tagId as string} settings={settings} />
             ))}
           </div>
           <div className="relative" onClick={(e) => e.preventDefault()}>

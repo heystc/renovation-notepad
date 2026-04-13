@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useLocation } from 'react-router-dom';
 import { ArrowLeft, Home, Sofa, Utensils, Bath, Bed, BookOpen, User, Flower2 } from 'lucide-react';
 import type { Settings, Note } from '../types';
 import { DEFAULT_SETTINGS } from '../constants/defaultData';
@@ -8,13 +8,24 @@ import MarkdownEditor from '../components/editor/MarkdownEditor';
 
 export const CreateNotePage = () => {
   const navigate = useNavigate();
+  const location = useLocation();
   const { id } = useParams();
-  const isEdit = !!id;
+  const isEdit = !!id && id !== 'new';
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [category, setCategory] = useState<string>(DEFAULT_SETTINGS.categories[0].id);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [rooms, setRooms] = useState<string[]>([]);
+
+  // 从location state获取默认内容（从版本历史新建笔记）
+  useEffect(() => {
+    if (location.state?.content) {
+      setContent(location.state.content);
+    }
+    if (location.state?.title) {
+      setTitle(location.state.title);
+    }
+  }, [location]);
+  const [tags, setTags] = useState<string[]>([]);
   const [progress, setProgress] = useState<string>(DEFAULT_SETTINGS.statuses[0].id);
   const [budget, setBudget] = useState('');
   const [actualCost, setActualCost] = useState('');
@@ -54,7 +65,9 @@ export const CreateNotePage = () => {
         setTitle(note.title);
         setContent(note.content);
         setCategory(note.category);
-        setRooms(note.rooms || (note.room ? [note.room] : []));
+        // 收集标签，过滤掉undefined，保证都是string类型
+        const loadedTags = note.tags || note.rooms || (note.tag || note.room ? [note.tag || note.room].filter((t): t is string => !!t) : []);
+        setTags(loadedTags.filter((t): t is string => !!t));
         setProgress(note.progress || settings.statuses[0]?.id || '');
         setBudget(note.budget ? String(note.budget) : '');
         setActualCost(note.actualCost ? String(note.actualCost) : '');
@@ -73,9 +86,9 @@ export const CreateNotePage = () => {
     }
   }, [id]);
 
-  const toggleRoom = (roomId: string) => {
-    setRooms(prev =>
-      prev.includes(roomId) ? prev.filter(r => r !== roomId) : [...prev, roomId]
+  const toggleTag = (tagId: string) => {
+    setTags(prev =>
+      prev.includes(tagId) ? prev.filter(r => r !== tagId) : [...prev, tagId]
     );
   };
 
@@ -89,8 +102,11 @@ export const CreateNotePage = () => {
           category,
           title,
           content,
-          rooms: rooms.length > 0 ? rooms : undefined,
-          room: rooms.length > 0 ? rooms[0] : undefined,
+          // 向后兼容：同时发送新旧字段
+          rooms: tags.length > 0 ? tags : undefined,
+          room: tags.length > 0 ? tags[0] : undefined,
+          tags: tags.length > 0 ? tags : undefined,
+          tag: tags.length > 0 ? tags[0] : undefined,
           progress,
           budget: budget ? Number(budget) : undefined,
           actualCost: actualCost ? Number(actualCost) : undefined,
@@ -104,8 +120,11 @@ export const CreateNotePage = () => {
           category,
           title,
           content,
-          rooms: rooms.length > 0 ? rooms : undefined,
-          room: rooms.length > 0 ? rooms[0] : undefined,
+          // 向后兼容：同时发送新旧字段
+          rooms: tags.length > 0 ? tags : undefined,
+          room: tags.length > 0 ? tags[0] : undefined,
+          tags: tags.length > 0 ? tags : undefined,
+          tag: tags.length > 0 ? tags[0] : undefined,
           progress,
           budget: budget ? Number(budget) : undefined,
           actualCost: actualCost ? Number(actualCost) : undefined,
@@ -178,24 +197,51 @@ export const CreateNotePage = () => {
           </div>
 
           <div>
-            <div className="p-2 border border-gray-200 rounded-lg max-h-48 overflow-y-auto">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
-                {settings.rooms.map(r => (
-                  <label key={r.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={rooms.includes(r.id)}
-                      onChange={() => toggleRoom(r.id)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
-                    />
-                    <span className="text-sm flex items-center gap-1 truncate">
-                      {/* Need to get room icon here, inline for simplicity */}
-                      {getRoomIconInline(r.icon)}
-                      {r.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
+            <div className="p-3 border border-gray-200 rounded-lg max-h-64 overflow-y-auto space-y-3">
+              {/* 如果有tagGroups，按分组显示 */}
+              {settings.tagGroups && settings.tagGroups.length > 0 ? (
+                settings.tagGroups.map(group => (
+                  <div key={group.id} className="space-y-1">
+                    {settings.tagGroups.length > 1 && (
+                      <div className="text-xs font-medium text-gray-500 px-1">{group.name}</div>
+                    )}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                      {group.tags.map(tag => (
+                        <label key={tag.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={tags.includes(tag.id)}
+                            onChange={() => toggleTag(tag.id)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                          />
+                          <span className="text-sm flex items-center gap-1 truncate">
+                            {getRoomIconInline(tag.icon)}
+                            {tag.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                // 向后兼容：没有tagGroups时使用旧格式
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                  {(settings.tags || settings.rooms || []).map(r => (
+                    <label key={r.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={tags.includes(r.id)}
+                        onChange={() => toggleTag(r.id)}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                      />
+                      <span className="text-sm flex items-center gap-1 truncate">
+                        {getRoomIconInline(r.icon)}
+                        {r.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

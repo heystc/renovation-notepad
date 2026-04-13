@@ -6,6 +6,11 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import multer from 'multer';
 import crypto from 'crypto';
+import { exec } from 'child_process';
+
+// Git 可执行文件路径
+// 如果 Node.js 找不到 git 命令，修改这里为绝对路径（用 `which git` 查找）
+const GIT_PATH = process.env.GIT_PATH || 'git';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -124,11 +129,63 @@ const readSettings = () => {
   const settingsPath = path.join(DATA_DIR, 'settings.json');
   if (fs.existsSync(settingsPath)) {
     const content = fs.readFileSync(settingsPath, 'utf-8');
-    return JSON.parse(content);
+    const parsed = JSON.parse(content);
+    // 向后兼容：如果没有appName，添加默认值
+    if (!parsed.appName) {
+      parsed.appName = '装修记事本';
+    }
+    // 向后兼容：如果没有logo，添加默认值
+    if (!parsed.hasOwnProperty('logo')) {
+      parsed.logo = null;
+    }
+    // 向后兼容：rooms → tags，如果tags不存在，使用rooms数据
+    if (!parsed.tags && parsed.rooms) {
+      parsed.tags = parsed.rooms;
+    }
+    // 确保tags存在
+    if (!parsed.tags) {
+      parsed.tags = [
+        { id: 'living', label: '客厅', icon: 'sofa' },
+        { id: 'kitchen', label: '厨房', icon: 'utensils' },
+        { id: 'dining', label: '餐厅', icon: 'utensils' },
+        { id: 'guest-bath', label: '客卫', icon: 'bath' },
+        { id: 'master-bed', label: '主卧', icon: 'bed' },
+        { id: 'master-bath', label: '主卫', icon: 'bath' },
+        { id: 'study', label: '书房', icon: 'book' },
+        { id: 'boy-room', label: '男孩房', icon: 'user' },
+        { id: 'girl-room', label: '女孩房', icon: 'user' },
+        { id: 'balcony', label: '阳台', icon: 'flower' }
+      ];
+    }
+    // 向后兼容：如果没有tagGroups，但是有tags，转换为默认分组
+    if (!parsed.tagGroups && parsed.tags) {
+      parsed.tagGroups = [
+        {
+          id: 'default',
+          name: '默认分组',
+          enableFilter: true,
+          tags: parsed.tags
+        }
+      ];
+    }
+    // 确保tagGroups存在
+    if (!parsed.tagGroups) {
+      parsed.tagGroups = [
+        {
+          id: 'default',
+          name: '默认分组',
+          enableFilter: true,
+          tags: parsed.tags
+        }
+      ];
+    }
+    return parsed;
   }
   return {
     version: '1.0',
     lastModified: new Date().toISOString(),
+    appName: '装修记事本',
+    logo: null,
     categories: [
       { id: 'idea', label: '灵感', color: 'bg-amber-100 text-amber-700' },
       { id: 'product', label: '产品', color: 'bg-blue-100 text-blue-700' },
@@ -136,7 +193,7 @@ const readSettings = () => {
       { id: 'file', label: '文件', color: 'bg-purple-100 text-purple-700' },
       { id: 'image', label: '图片', color: 'bg-pink-100 text-pink-700' }
     ],
-    rooms: [
+    tags: [
       { id: 'living', label: '客厅', icon: 'sofa' },
       { id: 'kitchen', label: '厨房', icon: 'utensils' },
       { id: 'dining', label: '餐厅', icon: 'utensils' },
@@ -147,6 +204,25 @@ const readSettings = () => {
       { id: 'boy-room', label: '男孩房', icon: 'user' },
       { id: 'girl-room', label: '女孩房', icon: 'user' },
       { id: 'balcony', label: '阳台', icon: 'flower' }
+    ],
+    tagGroups: [
+      {
+        id: 'default',
+        name: '空间',
+        enableFilter: true,
+        tags: [
+          { id: 'living', label: '客厅', icon: 'sofa' },
+          { id: 'kitchen', label: '厨房', icon: 'utensils' },
+          { id: 'dining', label: '餐厅', icon: 'utensils' },
+          { id: 'guest-bath', label: '客卫', icon: 'bath' },
+          { id: 'master-bed', label: '主卧', icon: 'bed' },
+          { id: 'master-bath', label: '主卫', icon: 'bath' },
+          { id: 'study', label: '书房', icon: 'book' },
+          { id: 'boy-room', label: '男孩房', icon: 'user' },
+          { id: 'girl-room', label: '女孩房', icon: 'user' },
+          { id: 'balcony', label: '阳台', icon: 'flower' }
+        ]
+      }
     ],
     statuses: [
       { id: 'todo', label: '待办', color: 'bg-yellow-100 text-yellow-700', icon: 'alert' },
@@ -371,6 +447,9 @@ app.post('/api/notes', authMiddleware, (req, res) => {
     // 写入 Markdown 文件（包含标题）
     writeMarkdownFile(markdownFile, title, content);
 
+    // 自动git commit
+    autoGitCommit(markdownFile, title, 'Create');
+
     res.json({ success: true, note: newNote });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to create note' });
@@ -425,12 +504,18 @@ app.put('/api/notes/:id', authMiddleware, (req, res) => {
       title: metadata.title,
       date: metadata.date,
       isPinned: metadata.isPinned,
+      room: metadata.room,
+      rooms: metadata.rooms,
+      tags: metadata.tags,
       creator: metadata.creator,
       createdAt: metadata.createdAt,
       updater: metadata.updater,
       updatedAt: metadata.updatedAt,
       content: content !== undefined ? content : readMarkdownFile(metadata.markdownFile)
     };
+
+    // 自动git commit
+    autoGitCommit(metadata.markdownFile, metadata.title, 'Update');
 
     res.json({ success: true, note: updatedNote });
   } catch (error) {
@@ -571,14 +656,21 @@ app.get('/api/settings', authMiddleware, (req, res) => {
 // 更新设置
 app.put('/api/settings', authMiddleware, (req, res) => {
   try {
-    const { categories, rooms, statuses } = req.body;
+    const { appName, logo, categories, tags, tagGroups, statuses } = req.body;
     const settings = readSettings();
 
+    if (appName !== undefined) settings.appName = appName;
+    if (logo !== undefined) settings.logo = logo;
     if (categories) settings.categories = categories;
-    if (rooms) settings.rooms = rooms;
+    if (tags) settings.tags = tags;
+    if (tagGroups) settings.tagGroups = tagGroups;
     if (statuses) settings.statuses = statuses;
 
     writeSettings(settings);
+
+    // 自动git commit settings.json
+    autoGitCommit('settings.json', 'Update settings', 'Update');
+
     res.json({ success: true, settings });
   } catch (error) {
     res.status(500).json({ success: false, message: 'Failed to update settings' });
@@ -786,6 +878,7 @@ app.get('/api/notes/:id', authMiddleware, (req, res) => {
       isPinned: metadata.isPinned,
       room: metadata.room,
       rooms: metadata.rooms,
+      tags: metadata.tags,
       progress: metadata.progress,
       budget: metadata.budget,
       actualCost: metadata.actualCost,
@@ -802,6 +895,175 @@ app.get('/api/notes/:id', authMiddleware, (req, res) => {
     res.status(500).json({ success: false, message: 'Failed to read note' });
   }
 });
+
+// --- Git 版本历史 API ---
+
+// 执行git命令
+const execGit = (command, cwd = DATA_DIR) => {
+  return new Promise((resolve, reject) => {
+    exec(command, { cwd, timeout: 10000 }, (error, stdout, stderr) => {
+      if (error) {
+        console.error(`Git error: ${error.message}`);
+        reject(error);
+      } else {
+        resolve(stdout.trim());
+      }
+    });
+  });
+};
+
+// 获取笔记的Git提交历史
+app.get('/api/notes/:id/history', authMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const index = readNotesIndex();
+    const metadata = index.notes.find(n => n.id === id);
+
+    if (!metadata) {
+      return res.status(404).json({ success: false, message: 'Note not found' });
+    }
+
+    const filePath = metadata.markdownFile;
+    const fullPath = path.join(DATA_DIR, filePath);
+
+    if (!fs.existsSync(fullPath)) {
+      return res.json({ success: true, history: [] });
+    }
+
+    try {
+      // 获取git log: 格式commit hash|date|message
+      const output = await execGit(`${GIT_PATH} log --pretty=format:"%h|%ci|%s" -- "${filePath}"`);
+      if (!output) {
+        return res.json({ success: true, history: [] });
+      }
+
+      const history = output.split('\n')
+        .filter(line => line.trim())
+        .map(line => {
+          const [hash, date, message] = line.split('|');
+          return { hash, date, message };
+        });
+
+      res.json({ success: true, history });
+    } catch (gitError) {
+      // git未初始化或其他错误，返回空历史
+      console.warn(`Git history unavailable: ${gitError.message}`);
+      res.json({ success: true, history: [] });
+    }
+  } catch (error) {
+    console.error('Error getting git history:', error);
+    res.status(500).json({ success: false, message: 'Failed to get history' });
+  }
+});
+
+// 获取指定commit的笔记内容
+app.get('/api/notes/:id/content/:hash', authMiddleware, async (req, res) => {
+  try {
+    const { id, hash } = req.params;
+    const index = readNotesIndex();
+    const metadata = index.notes.find(n => n.id === id);
+
+    if (!metadata) {
+      return res.status(404).json({ success: false, message: 'Note not found' });
+    }
+
+    const filePath = metadata.markdownFile;
+
+    try {
+      const content = await execGit(`${GIT_PATH} show ${hash}:${filePath}`);
+      // 去掉标题第一行（# 标题）
+      const lines = content.split('\n');
+      if (lines.length >= 2 && lines[0].startsWith('# ')) {
+        const contentWithoutTitle = lines.slice(2).join('\n').trim();
+        res.json({ success: true, content: contentWithoutTitle });
+      } else {
+        res.json({ success: true, content: content.trim() });
+      }
+    } catch (gitError) {
+      console.error(`Git show error: ${gitError.message}`);
+      res.status(500).json({ success: false, message: 'Failed to get content' });
+    }
+  } catch (error) {
+    console.error('Error getting commit content:', error);
+    res.status(500).json({ success: false, message: 'Failed to get content' });
+  }
+});
+
+// 获取当前版本与指定commit的diff
+app.get('/api/notes/:id/diff/:hash', authMiddleware, async (req, res) => {
+  try {
+    const { id, hash } = req.params;
+    const index = readNotesIndex();
+    const metadata = index.notes.find(n => n.id === id);
+
+    if (!metadata) {
+      return res.status(404).json({ success: false, message: 'Note not found' });
+    }
+
+    const filePath = metadata.markdownFile;
+
+    try {
+      const diff = await execGit(`${GIT_PATH} diff ${hash} HEAD -- "${filePath}"`);
+      res.json({ success: true, diff });
+    } catch (gitError) {
+      console.error(`Git diff error: ${gitError.message}`);
+      res.status(500).json({ success: false, message: 'Failed to get diff' });
+    }
+  } catch (error) {
+    console.error('Error getting diff:', error);
+    res.status(500).json({ success: false, message: 'Failed to get diff' });
+  }
+});
+
+// 上传Logo
+const logoStorage = multer.diskStorage({
+  destination: function (req, file, cb) {
+    cb(null, UPLOAD_DIR);
+  },
+  filename: function (req, file, cb) {
+    const ext = path.extname(file.originalname);
+    const uniqueName = `logo-${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`;
+    cb(null, uniqueName);
+  }
+});
+const logoUpload = multer({ storage: logoStorage });
+
+app.post('/api/settings/logo', authMiddleware, logoUpload.single('logo'), (req, res) => {
+  try {
+    if (!req.file) {
+      return res.status(400).json({ success: false, message: 'No logo file provided' });
+    }
+
+    const logoUrl = `/uploads/${req.file.filename}`;
+    res.json({ success: true, url: logoUrl, filename: req.file.filename });
+  } catch (error) {
+    console.error('Error uploading logo:', error);
+    res.status(500).json({ success: false, message: 'Failed to upload logo' });
+  }
+});
+
+// 自动git commit（在笔记创建/更新后调用）
+const autoGitCommit = async (markdownFile, title, action = 'Update') => {
+  try {
+    // 检查git是否可用以及是否是git仓库
+    await execGit(`${GIT_PATH} rev-parse --is-inside-work-tree`);
+    // git add 文件
+    await execGit(`${GIT_PATH} add "${markdownFile}" notes.json settings.json`);
+    // 检查暂存区是否有变更
+    const diff = await execGit(`${GIT_PATH} diff --cached --name-only`);
+    if (diff.trim()) {
+      // 有变更，提交
+      const commitMessage = `${action} note: ${title}`;
+      await execGit(`${GIT_PATH} commit -m "${commitMessage.replace(/"/g, '\\"')}"`);
+      console.log(`✓ Git committed: ${commitMessage}`);
+    } else {
+      console.log(`Git: No staged changes to commit for ${markdownFile}`);
+    }
+  } catch (error) {
+    // git不可用不影响主流程，输出错误帮助诊断
+    console.log(`⚠️  Auto git commit skipped: ${error.message}`);
+  }
+};
 
 // 启动服务器
 app.listen(PORT, () => {

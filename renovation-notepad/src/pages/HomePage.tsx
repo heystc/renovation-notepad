@@ -237,10 +237,14 @@ export const HomePage: React.FC<HomePageProps> = ({
             <div className="flex items-center justify-between sm:justify-start gap-2 sm:gap-3 flex-shrink-0">
               {/* Logo */}
               <div className="flex items-center gap-2 flex-shrink-0">
-                <div className="bg-blue-600 text-white p-1.5 rounded-lg">
-                  <NotebookPen className="w-5 h-5" />
-                </div>
-                <h1 className="text-xl font-bold text-gray-900 hidden sm:block">装修记事本</h1>
+                {settings.logo ? (
+                  <img src={settings.logo} alt={settings.appName} className="h-8 w-auto rounded" />
+                ) : (
+                  <div className="bg-blue-600 text-white p-1.5 rounded-lg">
+                    <NotebookPen className="w-5 h-5" />
+                  </div>
+                )}
+                <h1 className="text-xl font-bold text-gray-900 hidden sm:block">{settings.appName || '装修记事本'}</h1>
               </div>
 
               {/* 移动端：按钮和Logo同排，PC端不显示这里（在右侧显示） */}
@@ -440,7 +444,7 @@ export const HomePage: React.FC<HomePageProps> = ({
         ) : (
           <div>
             {/* 筛选器 */}
-            {(settings.categories.length > 1 || settings.rooms.length > 0 || settings.statuses.length > 0) && (
+            {(settings.categories.length > 1 || (settings.tags || settings.rooms || []).length > 0 || settings.statuses.length > 0) && (
               <div className="mb-6">
                 <button
                   onClick={() => setIsFiltersOpen(!isFiltersOpen)}
@@ -481,7 +485,47 @@ export const HomePage: React.FC<HomePageProps> = ({
                         ))}
                       </div>
                     )}
-                    {settings.rooms.length > 0 && (
+                    {/* 按分组显示标签，只显示启用筛选的分组 */}
+                    {(settings.tagGroups || []).filter(g => g.enableFilter).map(group => (
+                      <div key={group.id} className="flex flex-wrap items-center gap-2">
+                        {/* 全部按钮 - 包含分组图标和名称 */}
+                        <button
+                          onClick={() => {
+                            // 清除该分组内所有标签的选中
+                            setActiveRooms(prev => {
+                              const groupTagIds = new Set(group.tags.map(t => t.id));
+                              return prev.filter(id => !groupTagIds.has(id));
+                            });
+                          }}
+                          className={cn(
+                            "px-3 py-1 rounded-full text-sm border transition-colors flex items-center gap-1",
+                            !group.tags.some(tag => activeRooms.includes(tag.id))
+                              ? "bg-blue-600 text-white border-blue-600"
+                              : "bg-white border-gray-200 text-gray-600 hover:border-blue-200"
+                          )}
+                        >
+                          {group.icon && getRoomIcon(group.icon)}
+                          全部 {group.name}
+                        </button>
+                        {group.tags.map(tag => (
+                          <button
+                            key={tag.id}
+                            onClick={() => handleRoomToggle(tag.id)}
+                            className={cn(
+                              "px-3 py-1 rounded-full text-sm border transition-colors flex items-center gap-1",
+                                activeRooms.includes(tag.id)
+                                  ? "bg-blue-600 text-white border-blue-600"
+                                  : "bg-white border-gray-200 text-gray-600 hover:border-blue-200"
+                              )}
+                          >
+                            {getRoomIcon(tag.icon)}
+                            {tag.label}
+                          </button>
+                        ))}
+                      </div>
+                    ))}
+                    {/* 向后兼容：如果没有tagGroups，使用旧的tags/rooms */}
+                    {!settings.tagGroups && (settings.tags || settings.rooms || []).length > 0 && (
                       <div className="flex flex-wrap gap-2">
                         <button
                           onClick={() => setActiveRooms([])}
@@ -493,9 +537,9 @@ export const HomePage: React.FC<HomePageProps> = ({
                           )}
                         >
                           <Home className="w-4 h-4" />
-                          全部房间
+                          全部标签
                         </button>
-                        {settings.rooms.map(room => (
+                        {(settings.tags || settings.rooms || []).map(room => (
                           <button
                             key={room.id}
                             onClick={() => handleRoomToggle(room.id)}
@@ -558,10 +602,10 @@ export const HomePage: React.FC<HomePageProps> = ({
                         {settings.categories.find(c => c.id === activeCategory)?.label}
                       </span>
                     )}
-                    {/* 已选房间 */}
+                    {/* 已选标签 */}
                     {activeRooms.map(roomId => (
                       <span key={roomId} className="px-3 py-1 rounded-full text-xs border border-gray-200 bg-white text-gray-600">
-                        {settings.rooms.find(r => r.id === roomId)?.label}
+                        {(settings.tags || settings.rooms || []).find(r => r.id === roomId)?.label}
                       </span>
                     ))}
                     {/* 已选状态 */}

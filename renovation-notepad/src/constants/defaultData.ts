@@ -3,6 +3,8 @@ import type { Settings, Note, ExpenseItem } from '../types';
 export const DEFAULT_SETTINGS: Settings = {
   version: '1.0',
   lastModified: new Date().toISOString(),
+  appName: '装修记事本',
+  logo: null,
   categories: [
     { id: 'idea', label: '灵感', color: 'bg-amber-100 text-amber-700' },
     { id: 'product', label: '产品', color: 'bg-blue-100 text-blue-700' },
@@ -10,7 +12,7 @@ export const DEFAULT_SETTINGS: Settings = {
     { id: 'file', label: '文件', color: 'bg-purple-100 text-purple-700' },
     { id: 'image', label: '图片', color: 'bg-pink-100 text-pink-700' }
   ],
-  rooms: [
+  tags: [
     { id: 'living', label: '客厅', icon: 'sofa' },
     { id: 'kitchen', label: '厨房', icon: 'utensils' },
     { id: 'dining', label: '餐厅', icon: 'utensils' },
@@ -21,6 +23,26 @@ export const DEFAULT_SETTINGS: Settings = {
     { id: 'boy-room', label: '男孩房', icon: 'user' },
     { id: 'girl-room', label: '女孩房', icon: 'user' },
     { id: 'balcony', label: '阳台', icon: 'flower' }
+  ],
+  tagGroups: [
+    {
+      id: 'default',
+      name: '空间',
+      icon: 'home',
+      enableFilter: true,
+      tags: [
+        { id: 'living', label: '客厅', icon: 'sofa' },
+        { id: 'kitchen', label: '厨房', icon: 'utensils' },
+        { id: 'dining', label: '餐厅', icon: 'utensils' },
+        { id: 'guest-bath', label: '客卫', icon: 'bath' },
+        { id: 'master-bed', label: '主卧', icon: 'bed' },
+        { id: 'master-bath', label: '主卫', icon: 'bath' },
+        { id: 'study', label: '书房', icon: 'book' },
+        { id: 'boy-room', label: '男孩房', icon: 'user' },
+        { id: 'girl-room', label: '女孩房', icon: 'user' },
+        { id: 'balcony', label: '阳台', icon: 'flower' }
+      ]
+    }
   ],
   statuses: [
     { id: 'todo', label: '待办', color: 'bg-yellow-100 text-yellow-700', icon: 'alert' },

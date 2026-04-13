@@ -12,6 +12,7 @@ import LoginPage from './pages/LoginPage';
 import HomePage from './pages/HomePage';
 import CreateNotePage from './pages/CreateNotePage';
 import NoteDetailPage from './pages/NoteDetailPage';
+import SettingsPage from './pages/SettingsPage';
 
 // Utility
 export function cn(...inputs: ClassValue[]) {
@@ -91,6 +92,7 @@ function App() {
       <Route path="/create" element={<CreateNotePage />} />
       <Route path="/note/:id" element={<NoteDetailPage />} />
       <Route path="/edit/:id" element={<CreateNotePage />} />
+      <Route path="/settings" element={<SettingsPage />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

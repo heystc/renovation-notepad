@@ -1,13 +1,14 @@
 import { useState, useEffect } from 'react';
 import { useParams, useNavigate, Link } from 'react-router-dom';
-import { ArrowLeft, Trash2, DollarSign, Edit } from 'lucide-react';
+import { ArrowLeft, Trash2, DollarSign, Edit, History } from 'lucide-react';
 import type { Note, Settings } from '../types';
 import { DEFAULT_SETTINGS } from '../constants/defaultData';
 import { renderMarkdown } from '../utils/markdown';
 import api from '../utils/api';
 import { CategoryBadge } from '../components/badges/CategoryBadge';
-import { RoomBadge } from '../components/badges/RoomBadge';
+import { TagBadge } from '../components/badges/TagBadge';
 import { ProgressBadge } from '../components/badges/ProgressBadge';
+import { VersionHistoryModal } from '../components/version/VersionHistoryModal';
 
 export const NoteDetailPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -15,6 +16,7 @@ export const NoteDetailPage = () => {
   const [note, setNote] = useState<Note | null>(null);
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [isLoading, setIsLoading] = useState(true);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
 
   const loadNote = async () => {
     try {
@@ -93,6 +95,13 @@ export const NoteDetailPage = () => {
               </h1>
             </div>
             <div className="flex items-center gap-2">
+              <button
+                onClick={() => setShowHistoryModal(true)}
+                className="p-2 text-gray-600 hover:bg-gray-50 rounded-lg transition-colors"
+                title="修改历史"
+              >
+                <History className="w-5 h-5" />
+              </button>
               <Link
                 to={`/edit/${note.id}`}
                 className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -117,8 +126,8 @@ export const NoteDetailPage = () => {
           {/* 标签栏 */}
           <div className="flex flex-wrap gap-2 mb-6 pb-6 border-b border-gray-100">
             <CategoryBadge category={note.category} categories={settings.categories} />
-            {(note.rooms || (note.room ? [note.room] : [])).map(roomId => (
-              <RoomBadge key={roomId} room={roomId} rooms={settings.rooms} />
+            {(note.tags || note.rooms || (note.tag || note.room ? [note.tag || note.room] : [])).filter(Boolean).map(tagId => (
+              <TagBadge key={tagId} tagId={tagId as string} settings={settings} />
             ))}
             {note.progress && <ProgressBadge status={note.progress} statuses={settings.statuses} />}
             {(note.budget || note.actualCost) && (
@@ -157,6 +166,11 @@ export const NoteDetailPage = () => {
           <span className="font-medium">编辑笔记</span>
         </Link>
       </div>
+
+      {/* 版本历史弹窗 */}
+      {showHistoryModal && (
+        <VersionHistoryModal noteId={note.id} onClose={() => setShowHistoryModal(false)} />
+      )}
     </div>
   );
 };

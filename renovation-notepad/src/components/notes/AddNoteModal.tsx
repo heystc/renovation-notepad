@@ -21,7 +21,7 @@ export const AddNoteModal: React.FC<AddNoteModalProps> = ({ isOpen, onClose, onA
   const [category, setCategory] = useState<string>(settings.categories[0].id);
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
-  const [rooms, setRooms] = useState<string[]>([]);
+  const [tags, setTags] = useState<string[]>([]);
   const [progress, setProgress] = useState<string>(settings.statuses[0].id);
   const [budget, setBudget] = useState('');
   const [actualCost, setActualCost] = useState('');
@@ -31,13 +31,13 @@ export const AddNoteModal: React.FC<AddNoteModalProps> = ({ isOpen, onClose, onA
     if (isOpen) {
       setCategory(settings.categories[0].id);
       setProgress(settings.statuses[0].id);
-      setRooms([]);
+      setTags([]);
     }
   }, [isOpen, settings]);
 
-  const toggleRoom = (roomId: string) => {
-    setRooms(prev =>
-      prev.includes(roomId) ? prev.filter(r => r !== roomId) : [...prev, roomId]
+  const toggleTag = (tagId: string) => {
+    setTags(prev =>
+      prev.includes(tagId) ? prev.filter(r => r !== tagId) : [...prev, tagId]
     );
   };
 
@@ -52,15 +52,18 @@ export const AddNoteModal: React.FC<AddNoteModalProps> = ({ isOpen, onClose, onA
         title,
         content,
         date: new Date().toISOString().split('T')[0],
-        rooms: rooms.length > 0 ? rooms : undefined,
-        room: rooms.length > 0 ? rooms[0] : undefined,
+        // 向后兼容同时发送新旧字段
+        rooms: tags.length > 0 ? tags : undefined,
+        room: tags.length > 0 ? tags[0] : undefined,
+        tags: tags.length > 0 ? tags : undefined,
+        tag: tags.length > 0 ? tags[0] : undefined,
         progress,
         budget: budget ? Number(budget) : undefined,
         actualCost: actualCost ? Number(actualCost) : undefined,
       });
       setTitle('');
       setContent('');
-      setRooms([]);
+      setTags([]);
       setProgress(settings.statuses[0].id);
       setBudget('');
       setActualCost('');
@@ -115,23 +118,51 @@ export const AddNoteModal: React.FC<AddNoteModalProps> = ({ isOpen, onClose, onA
           </div>
 
           <div>
-            <div className="p-2 border border-gray-200 rounded-lg max-h-36 overflow-y-auto">
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
-                {settings.rooms.map(r => (
-                  <label key={r.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50 transition-colors">
-                    <input
-                      type="checkbox"
-                      checked={rooms.includes(r.id)}
-                      onChange={() => toggleRoom(r.id)}
-                      className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
-                    />
-                    <span className="text-sm flex items-center gap-1 truncate">
-                      {getRoomIcon(r.icon)}
-                      {r.label}
-                    </span>
-                  </label>
-                ))}
-              </div>
+            <div className="p-3 border border-gray-200 rounded-lg max-h-48 overflow-y-auto space-y-3">
+              {/* 如果有tagGroups，按分组显示 */}
+              {settings.tagGroups && settings.tagGroups.length > 0 ? (
+                settings.tagGroups.map(group => (
+                  <div key={group.id} className="space-y-1">
+                    {settings.tagGroups.length > 1 && (
+                      <div className="text-xs font-medium text-gray-500 px-1">{group.name}</div>
+                    )}
+                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                      {group.tags.map(tag => (
+                        <label key={tag.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50 transition-colors">
+                          <input
+                            type="checkbox"
+                            checked={tags.includes(tag.id)}
+                            onChange={() => toggleTag(tag.id)}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                          />
+                          <span className="text-sm flex items-center gap-1 truncate">
+                            {getRoomIcon(tag.icon)}
+                            {tag.label}
+                          </span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                ))
+              ) : (
+                // 向后兼容：没有tagGroups时使用旧格式
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
+                  {(settings.tags || settings.rooms || []).map(r => (
+                    <label key={r.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50 transition-colors">
+                      <input
+                        type="checkbox"
+                        checked={tags.includes(r.id)}
+                        onChange={() => toggleTag(r.id)}
+                        className="rounded border-gray-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
+                      />
+                      <span className="text-sm flex items-center gap-1 truncate">
+                        {getRoomIcon(r.icon)}
+                        {r.label}
+                      </span>
+                    </label>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
 

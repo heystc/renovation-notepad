@@ -1,10 +1,23 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { X, Settings as SettingsIcon, Trash2, Save, Plus, Home, Sofa, Utensils, Bath, Bed, BookOpen, User as UserIcon, Flower2 } from 'lucide-react';
-import type { Settings, User } from '../../types';
+import { X, Settings as SettingsIcon, Trash2, Save, Plus, Upload, ChevronDown, ChevronRight } from 'lucide-react';
+import * as Icons from 'lucide-react';
+import type { Settings, User, TagGroup, TagConfig } from '../../types';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
-import { getRoomIcon, getStatusIcon } from '../../utils/icons';
+import { getStatusIcon } from '../../utils/icons';
 import api from '../../utils/api';
+
+// 所有可用图标列表
+const AVAILABLE_ICONS = [
+  'home', 'sofa', 'utensils', 'bath', 'bed', 'book', 'user', 'flower',
+  'shopping-bag', 'coffee', 'tv', 'wifi', 'key', 'door-open', 'lamp',
+  'paintbrush', 'tool', 'hammer', 'wrench', 'settings', 'calendar',
+  'map', 'image', 'file', 'folder', 'heart', 'star', 'check', 'alert',
+  'clock', 'dollar-sign', 'credit-card', 'gift', 'camera', 'phone',
+  'laptop', 'monitor', 'building', 'house', 'tree', 'cloud', 'sun',
+  'moon', 'water', 'fire', 'wind', 'leaf', 'paw-print', 'utensils-crossed',
+  'scissors', 'pen-tool', 'mouse', 'keyboard', 'hard-drive', 'server'
+] as const;
 
 function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
@@ -28,7 +41,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   isCurrentUserAdmin,
 }) => {
   const [localSettings, setLocalSettings] = useState<Settings>(settings);
-  const [activeTab, setActiveTab] = useState<'categories' | 'rooms' | 'statuses' | 'users'>('categories');
+  const [activeTab, setActiveTab] = useState<'general' | 'categories' | 'tags' | 'statuses' | 'users'>('general');
   const [isSaving, setIsSaving] = useState(false);
   const [users, setUsers] = useState<User[]>([]);
   const [showAddUser, setShowAddUser] = useState(false);
@@ -38,7 +51,85 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [oldPassword, setOldPassword] = useState('');
   const [newUserPassword, setNewUserPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+  const [iconPickerOpen, setIconPickerOpen] = useState(false);
+  const [iconPickerTarget, setIconPickerTarget] = useState<
+    { type: 'tag', groupId: string, tagIndex: number } |
+    { type: 'group', groupId: string } | null
+  >(null);
   const modalRef = useRef<HTMLDivElement>(null);
+
+  // 打开标签图标选择器
+  const openIconPicker = (groupId: string, tagIndex: number) => {
+    setIconPickerTarget({ type: 'tag', groupId, tagIndex });
+    setIconPickerOpen(true);
+  };
+
+  // 打开分组图标选择器
+  const openGroupIconPicker = (groupId: string) => {
+    setIconPickerTarget({ type: 'group', groupId });
+    setIconPickerOpen(true);
+  };
+
+  // 选择图标
+  const selectIcon = (iconName: string) => {
+    if (!iconPickerTarget) return;
+    if (iconPickerTarget.type === 'tag') {
+      updateTagInGroup(iconPickerTarget.groupId, iconPickerTarget.tagIndex, 'icon', iconName);
+    } else if (iconPickerTarget.type === 'group') {
+      updateGroup(iconPickerTarget.groupId, { icon: iconName });
+    }
+    setIconPickerOpen(false);
+    setIconPickerTarget(null);
+  };
+
+  // 动态渲染图标
+  const renderIcon = (iconName: string): React.ReactNode => {
+    const IconComp = getIconComponent(iconName);
+    if (IconComp) {
+      return <IconComp className="w-4 h-4 text-gray-600" />;
+    }
+    return null;
+  };
+
+  // 获取图标组件
+  const getIconComponent = (iconName: string): React.FC<{ className?: string }> | null => {
+    // 将 kebab-case 转为 PascalCase
+    const pascalName = iconName
+      .split('-')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join('');
+    return (Icons as any)[pascalName] || null;
+  };
+
+  // 上传logo
+  const handleUploadLogo = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const formData = new FormData();
+    formData.append('logo', file);
+    try {
+      const res = await api.post('/settings/logo', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      if (res.data.success) {
+        setLocalSettings(prev => ({
+          ...prev,
+          logo: res.data.url,
+        }));
+      }
+    } catch (error) {
+      console.error('上传Logo失败:', error);
+      alert('上传失败');
+    }
+  };
+
+  const removeLogo = () => {
+    setLocalSettings(prev => ({
+      ...prev,
+      logo: null,
+    }));
+  };
 
   useEffect(() => {
     if (isOpen && modalRef.current) {
@@ -173,14 +264,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     }
   };
 
-  const addItem = (type: 'categories' | 'rooms' | 'statuses') => {
+  const addItem = (type: 'categories' | 'tags' | 'statuses') => {
     const id = Date.now().toString(36);
     setLocalSettings(prev => {
       const newSettings = { ...prev };
       if (type === 'categories') {
         newSettings.categories = [...prev.categories, { id, label: '新分类', color: 'bg-gray-100 text-gray-700' }];
-      } else if (type === 'rooms') {
-        newSettings.rooms = [...prev.rooms, { id, label: '新房间', icon: 'home' }];
       } else if (type === 'statuses') {
         newSettings.statuses = [...prev.statuses, { id, label: '新状态', color: 'bg-gray-100 text-gray-700', icon: 'alert' }];
       }
@@ -188,13 +277,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
   };
 
-  const removeItem = (type: 'categories' | 'rooms' | 'statuses', id: string) => {
+  const removeItem = (type: 'categories' | 'tags' | 'statuses', id: string) => {
     setLocalSettings(prev => {
       const newSettings = { ...prev };
       if (type === 'categories') {
         newSettings.categories = prev.categories.filter(c => c.id !== id);
-      } else if (type === 'rooms') {
-        newSettings.rooms = prev.rooms.filter(r => r.id !== id);
       } else if (type === 'statuses') {
         newSettings.statuses = prev.statuses.filter(s => s.id !== id);
       }
@@ -202,19 +289,114 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     });
   };
 
-  const updateItem = (type: 'categories' | 'rooms' | 'statuses', id: string, updates: any) => {
+  const updateItem = (type: 'categories' | 'tags' | 'statuses', id: string, updates: any) => {
     setLocalSettings(prev => {
       const newSettings = { ...prev };
       if (type === 'categories') {
         newSettings.categories = prev.categories.map(c => c.id === id ? { ...c, ...updates } : c);
-      } else if (type === 'rooms') {
-        newSettings.rooms = prev.rooms.map(r => r.id === id ? { ...r, ...updates } : r);
       } else if (type === 'statuses') {
         newSettings.statuses = prev.statuses.map(s => s.id === id ? { ...s, ...updates } : s);
       }
       return newSettings;
     });
   };
+
+  // 分组管理
+  const addGroup = () => {
+    const id = Date.now().toString(36);
+    setLocalSettings(prev => ({
+      ...prev,
+      tagGroups: [
+        ...(prev.tagGroups || []),
+        {
+          id,
+          name: '新分组',
+          enableFilter: true,
+          tags: []
+        }
+      ]
+    }));
+    // 新添加的分组默认展开
+    setExpandedGroups(prev => new Set(prev).add(id));
+  };
+
+  const deleteGroup = (groupId: string) => {
+    if (!window.confirm('确定要删除这个分组吗？分组内的所有标签都会被删除。')) return;
+    setLocalSettings(prev => ({
+      ...prev,
+      tagGroups: (prev.tagGroups || []).filter(g => g.id !== groupId)
+    }));
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      next.delete(groupId);
+      return next;
+    });
+  };
+
+  const updateGroup = (groupId: string, updates: Partial<TagGroup>) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      tagGroups: (prev.tagGroups || []).map(g => g.id === groupId ? { ...g, ...updates } : g)
+    }));
+  };
+
+  const addTagToGroup = (groupId: string) => {
+    const id = Date.now().toString(36);
+    const newTag: TagConfig = { id, label: '新标签', icon: 'home' };
+    setLocalSettings(prev => ({
+      ...prev,
+      tagGroups: (prev.tagGroups || []).map(g =>
+        g.id === groupId
+          ? { ...g, tags: [...g.tags, newTag] }
+          : g
+      )
+    }));
+  };
+
+  const deleteTagFromGroup = (groupId: string, tagId: string) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      tagGroups: (prev.tagGroups || []).map(g =>
+        g.id === groupId
+          ? { ...g, tags: g.tags.filter(t => t.id !== tagId) }
+          : g
+      )
+    }));
+  };
+
+  const updateTagInGroup = (groupId: string, tagIndex: number, field: keyof TagConfig, value: string) => {
+    setLocalSettings(prev => ({
+      ...prev,
+      tagGroups: (prev.tagGroups || []).map(g =>
+        g.id === groupId
+          ? {
+              ...g,
+              tags: g.tags.map((tag, i) => i === tagIndex ? { ...tag, [field]: value } : tag)
+            }
+          : g
+      )
+    }));
+  };
+
+  const toggleGroupExpanded = (groupId: string) => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
+
+  // 初始化展开所有分组
+  useEffect(() => {
+    if (isOpen && activeTab === 'tags' && localSettings.tagGroups) {
+      const allGroups = new Set(localSettings.tagGroups.map(g => g.id));
+      setExpandedGroups(allGroups);
+    }
+  }, [isOpen, activeTab, localSettings.tagGroups]);
 
   const colorOptions = [
     { bg: 'bg-amber-100', text: 'text-amber-700', label: '琥珀' },
@@ -224,17 +406,6 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     { bg: 'bg-pink-100', text: 'text-pink-700', label: '粉色' },
     { bg: 'bg-red-100', text: 'text-red-700', label: '红色' },
     { bg: 'bg-gray-100', text: 'text-gray-700', label: '灰色' },
-  ];
-
-  const iconOptions = [
-    { id: 'home', icon: <Home className="w-4 h-4" /> },
-    { id: 'sofa', icon: <Sofa className="w-4 h-4" /> },
-    { id: 'utensils', icon: <Utensils className="w-4 h-4" /> },
-    { id: 'bath', icon: <Bath className="w-4 h-4" /> },
-    { id: 'bed', icon: <Bed className="w-4 h-4" /> },
-    { id: 'book', icon: <BookOpen className="w-4 h-4" /> },
-    { id: 'user', icon: <UserIcon className="w-4 h-4" /> },
-    { id: 'flower', icon: <Flower2 className="w-4 h-4" /> },
   ];
 
   if (!isOpen) return null;
@@ -259,6 +430,17 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         <div className="flex border-b bg-gray-50 flex-wrap">
           <button
+            onClick={() => setActiveTab('general')}
+            className={cn(
+              "flex-1 min-w-[80px] px-4 py-3 text-sm font-medium transition-colors",
+              activeTab === 'general'
+                ? "bg-white text-blue-600 border-b-2 border-blue-600"
+                : "text-gray-500 hover:text-gray-700"
+            )}
+          >
+            通用设置
+          </button>
+          <button
             onClick={() => setActiveTab('categories')}
             className={cn(
               "flex-1 min-w-[80px] px-4 py-3 text-sm font-medium transition-colors",
@@ -270,15 +452,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             分类管理
           </button>
           <button
-            onClick={() => setActiveTab('rooms')}
+            onClick={() => setActiveTab('tags')}
             className={cn(
               "flex-1 min-w-[80px] px-4 py-3 text-sm font-medium transition-colors",
-              activeTab === 'rooms'
+              activeTab === 'tags'
                 ? "bg-white text-blue-600 border-b-2 border-blue-600"
                 : "text-gray-500 hover:text-gray-700"
             )}
           >
-            房间管理
+            标签管理
           </button>
           <button
             onClick={() => setActiveTab('statuses')}
@@ -310,6 +492,53 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         </div>
 
         <div className="p-4 flex-1 overflow-y-auto space-y-4">
+          {activeTab === 'general' && (
+            <div className="space-y-4">
+              {/* 应用名称 */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">应用名称</label>
+                <input
+                  type="text"
+                  value={localSettings.appName || ''}
+                  onChange={(e) => setLocalSettings(prev => ({ ...prev, appName: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:border-blue-500 focus:ring-2 focus:ring-blue-200 outline-none"
+                  placeholder="输入应用名称"
+                />
+              </div>
+
+              {/* Logo */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Logo</label>
+                {localSettings.logo ? (
+                  <div className="flex items-center gap-4">
+                    <img src={localSettings.logo} alt="Logo" className="h-12 w-auto rounded border" />
+                    <button
+                      onClick={removeLogo}
+                      className="px-3 py-1 border border-red-300 text-red-600 rounded hover:bg-red-50 transition-colors text-sm"
+                    >
+                      删除
+                    </button>
+                  </div>
+                ) : (
+                  <label className="flex items-center gap-2 px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer">
+                    <Upload className="w-5 h-5 text-gray-400" />
+                    <span className="text-gray-500">点击上传Logo（推荐尺寸：128x128）</span>
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={handleUploadLogo}
+                      className="hidden"
+                    />
+                  </label>
+                )}
+              </div>
+
+              <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+                💡 提示：完整的全局设置请前往 <code className="bg-blue-100 px-1 rounded">/settings</code> 页面。
+              </div>
+            </div>
+          )}
+
           {activeTab === 'categories' && (
             <div className="space-y-3">
               {localSettings.categories.map((cat) => (
@@ -354,47 +583,169 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           )}
 
-          {activeTab === 'rooms' && (
-            <div className="space-y-3">
-              {localSettings.rooms.map((room) => (
-                <div key={room.id} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg">
-                  <div className="p-2 bg-gray-200 rounded-lg">
-                    {getRoomIcon(room.icon)}
-                  </div>
-                  <input
-                    type="text"
-                    value={room.label}
-                    onChange={(e) => updateItem('rooms', room.id, { label: e.target.value })}
-                    className="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
-                  />
-                  <div className="flex gap-1">
-                    {iconOptions.map((icon) => (
-                      <button
-                        key={`${room.id}-${icon.id}`}
-                        onClick={() => updateItem('rooms', room.id, { icon: icon.id })}
-                        className={cn(
-                          "p-2 rounded-lg border-2 transition-colors",
-                          room.icon === icon.id ? "border-blue-500 bg-blue-50" : "border-transparent hover:bg-gray-100"
+          {activeTab === 'tags' && (
+            <div className="space-y-4">
+              {(localSettings.tagGroups || []).map((group) => {
+                const isExpanded = expandedGroups.has(group.id);
+                return (
+                  <div key={group.id} className="border border-gray-200 rounded-lg overflow-hidden bg-gray-50">
+                    {/* 分组头部 */}
+                    <div
+                      className="flex items-center gap-2 p-3 bg-gray-100 cursor-pointer hover:bg-gray-200 transition-colors"
+                      onClick={() => toggleGroupExpanded(group.id)}
+                    >
+                      {isExpanded ? (
+                        <ChevronDown className="w-5 h-5 text-gray-600" />
+                      ) : (
+                        <ChevronRight className="w-5 h-5 text-gray-600" />
+                      )}
+                      <div className="flex-1 flex flex-col sm:flex-row sm:items-center gap-2">
+                        {group.icon && (
+                          <div className="p-1 bg-white rounded border">
+                            {renderIcon(group.icon)}
+                          </div>
                         )}
+                        <input
+                          type="text"
+                          value={group.name}
+                          onChange={(e) => updateGroup(group.id, { name: e.target.value })}
+                          onClick={(e) => e.stopPropagation()}
+                          placeholder="分组名称"
+                          className="px-2 py-1 border border-gray-300 rounded text-sm bg-white focus:outline-none focus:border-blue-500 w-full sm:w-auto"
+                        />
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openGroupIconPicker(group.id);
+                          }}
+                          className="px-2 py-1 border rounded text-sm bg-white hover:bg-gray-50"
+                        >
+                          {group.icon ? '更换图标' : '添加图标'}
+                        </button>
+                        <label className="flex items-center gap-2 text-sm text-gray-600 ml-1">
+                          <input
+                            type="checkbox"
+                            checked={group.enableFilter}
+                            onChange={(e) => {
+                              e.stopPropagation();
+                              updateGroup(group.id, { enableFilter: e.target.checked });
+                            }}
+                            onClick={(e) => e.stopPropagation()}
+                            className="rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+                          />
+                          启用筛选
+                        </label>
+                      </div>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          deleteGroup(group.id);
+                        }}
+                        className="p-1.5 text-red-500 hover:bg-red-100 rounded-lg transition-colors"
+                        title="删除分组"
                       >
-                        {icon.icon}
+                        <Trash2 className="w-4 h-4" />
                       </button>
-                    ))}
+                    </div>
+
+                    {/* 分组内标签列表 */}
+                    {isExpanded && (
+                      <div className="p-3 space-y-3">
+                        {group.tags.map((tag, tagIndex) => {
+                          return (
+                            <div key={tag.id} className="flex items-center gap-3 p-2 bg-white rounded-lg border border-gray-200">
+                              <input
+                                type="text"
+                                value={tag.id}
+                                onChange={(e) => updateTagInGroup(group.id, tagIndex, 'id', e.target.value)}
+                                className="flex-1 px-2 py-1.5 border rounded text-sm"
+                                placeholder="ID"
+                              />
+                              <input
+                                type="text"
+                                value={tag.label}
+                                onChange={(e) => updateTagInGroup(group.id, tagIndex, 'label', e.target.value)}
+                                className="flex-2 px-2 py-1.5 border rounded text-sm"
+                                placeholder="名称"
+                              />
+                              <button
+                                type="button"
+                                onClick={() => openIconPicker(group.id, tagIndex)}
+                                className="flex items-center gap-2 px-3 py-1 border rounded bg-gray-50 hover:bg-gray-100 transition-colors"
+                                title="选择图标"
+                              >
+                                {renderIcon(tag.icon)}
+                                <span className="text-sm text-gray-600">{tag.icon}</span>
+                              </button>
+                              <button
+                                onClick={() => deleteTagFromGroup(group.id, tag.id)}
+                                className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors"
+                                title="删除标签"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          );
+                        })}
+                        <button
+                          onClick={() => addTagToGroup(group.id)}
+                          className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-500 transition-colors text-sm"
+                        >
+                          + 添加标签到分组
+                        </button>
+
+                        {/* 图标选择弹窗 */}
+                        {iconPickerOpen && (
+                          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 p-4">
+                            <div className="bg-white w-full max-w-lg rounded-2xl shadow-2xl overflow-hidden max-h-[70vh] flex flex-col">
+                              <div className="p-4 border-b flex justify-between items-center">
+                                <h3 className="font-semibold text-lg">选择图标</h3>
+                                <button
+                                  onClick={() => {
+                                    setIconPickerOpen(false);
+                                    setIconPickerTarget(null);
+                                  }}
+                                  className="p-2 hover:bg-gray-200 rounded-full transition-colors"
+                                >
+                                  <X className="w-5 h-5" />
+                                </button>
+                              </div>
+                              <div className="p-4 overflow-y-auto">
+                                <div className="grid grid-cols-6 sm:grid-cols-8 gap-2">
+                                  {AVAILABLE_ICONS.map(iconName => {
+                                    const IconComp = getIconComponent(iconName);
+                                    return (
+                                      <button
+                                        key={iconName}
+                                        onClick={() => selectIcon(iconName)}
+                                        className="flex flex-col items-center justify-center p-3 border rounded-lg hover:bg-blue-50 hover:border-blue-300 transition-colors"
+                                        title={iconName}
+                                      >
+                                        {IconComp && <IconComp className="w-5 h-5 text-gray-600" />}
+                                        <span className="text-xs text-gray-500 mt-1 truncate w-full text-center">{iconName}</span>
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => removeItem('rooms', room.id)}
-                    className="p-2 text-red-500 hover:bg-red-100 rounded-lg transition-colors"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
               <button
-                onClick={() => addItem('rooms')}
+                onClick={addGroup}
                 className="w-full py-2 border-2 border-dashed border-gray-300 rounded-lg text-gray-500 hover:border-blue-400 hover:text-blue-500 transition-colors"
               >
-                + 添加房间
+                + 添加标签分组
               </button>
+              <div className="p-3 bg-blue-50 rounded-lg text-sm text-blue-700">
+                💡 提示：启用筛选的分组会在首页筛选区显示，方便按组快速筛选标签。
+              </div>
             </div>
           )}
 
@@ -549,7 +900,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="space-y-2">
                     {users.map((user) => (
                       <div key={user.username} className="flex items-center gap-3 p-3 bg-gray-50 rounded-lg border">
-                        <UserIcon className="w-5 h-5 text-gray-500" />
+                        <Icons.User className="w-5 h-5 text-gray-500" />
                         <div className="flex-1">
                           <div className="font-medium text-gray-900">
                             {user.username}

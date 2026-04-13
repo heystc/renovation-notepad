@@ -275,10 +275,16 @@ crontab -e
 | POST | `/api/notes` | 创建新笔记 |
 | PUT | `/api/notes/:id` | 更新笔记 |
 | DELETE | `/api/notes/:id` | 删除笔记 |
+| GET | `/api/notes/:id/history` | 获取笔记 Git 修改历史 |
+| GET | `/api/notes/:id/content/:hash` | 获取指定 commit 的笔记内容 |
+| GET | `/api/notes/:id/diff/:hash` | 获取当前与指定 commit 的差异对比 |
 | GET | `/api/settings` | 获取系统设置 |
 | PUT | `/api/settings` | 更新系统设置 |
+| POST | `/api/settings/logo` | 上传 Logo |
 | POST | `/api/import/markdown` | 导入单个 Markdown |
 | POST | `/api/import/batch` | 批量导入 Markdown |
+| POST | `/api/upload` | 上传图片 |
+| DELETE | `/api/upload/:filename` | 删除图片 |
 
 ### API 示例
 
@@ -329,6 +335,45 @@ curl -X POST http://localhost:3001/api/notes \
 - ✅ **分离关注**：属性（JSON）与内容（Markdown）分离
 - ✅ **持久化**：数据保存在文件系统，重启不丢失
 - ✅ **易于备份**：直接复制 data 目录即可
+
+## 版本历史管理（Git 集成）
+
+本项目内置了基于 Git 的自动版本历史管理功能。每次新建或编辑笔记后，会自动提交变更到 Git，用户可以在前端查看修改历史、对比不同版本。
+
+### 前置条件
+
+要启用版本历史功能，需要满足：
+
+1. **系统已安装 Git**，并且 Git 可执行文件在 PATH 中
+   ```bash
+   # 检查 Git 是否安装
+   git --version
+   ```
+
+2. **`data/` 目录已经初始化为 Git 仓库**
+   ```bash
+   cd data
+   git init
+   git add .
+   git commit -m "Initial commit"
+   cd ..
+   ```
+
+3. **Node.js 进程有 Git 执行权限**（一般默认就有）
+
+如果不满足上述条件，版本历史功能会自动静默跳过，**不影响笔记的新建/编辑/删除等主功能**。
+
+### 工作原理
+
+- 每次新建笔记 → 自动 `git add` + `git commit -m "Create note: ..."`
+- 每次更新笔记 → 自动 `git add` + `git commit -m "Update note: ..."`
+- 每次修改设置 → 自动 `git add settings.json` + `git commit`
+- 前端在笔记详情页可以点击"修改历史"查看所有提交记录
+- 可以查看历史版本内容，也可以对比当前版本与历史版本的差异
+
+### 禁用版本历史
+
+如果不需要这个功能，什么都不用做。只要 Git 不可用，它会自动不工作，也不会输出错误信息。
 
 ## 常用维护命令
 
@@ -411,6 +456,30 @@ pm2 logs renovation-backend
 # 系统日志
 tail -f /var/log/syslog
 ```
+
+### Git 版本历史不工作
+
+如果版本历史功能不工作，检查：
+
+1. **Git 是否安装**
+   ```bash
+   git --version
+   # 如果提示 command not found，需要先安装 Git
+   ```
+
+2. **data 目录是否初始化为 Git 仓库**
+   ```bash
+   cd data
+   git status
+   # 如果提示 fatal: not a git repository，需要初始化：
+   git init
+   git add .
+   git commit -m "Initial commit"
+   ```
+
+3. **权限问题** - 确保 Node.js 可以执行 git 命令并且有写入权限
+
+**注意**：即使 Git 版本历史不可用，核心笔记功能完全不受影响，只是不能查看修改历史而已。
 
 ## 许可证
 
