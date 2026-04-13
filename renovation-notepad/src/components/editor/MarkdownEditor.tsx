@@ -1,5 +1,11 @@
-import React, { useState, useRef } from 'react';
-import { Bold, Italic, List, ListOrdered, Link as LinkIcon, Image as ImageIcon } from 'lucide-react';
+import React, { useRef, useState, useMemo } from 'react';
+import { useEditor, EditorContent } from '@tiptap/react';
+import { StarterKit } from '@tiptap/starter-kit';
+import { Markdown, MarkdownManager } from '@tiptap/markdown';
+import ImageExtension from '@tiptap/extension-image';
+import { Link } from '@tiptap/extension-link';
+import { Underline } from '@tiptap/extension-underline';
+import { Bold, Italic, List, ListOrdered, Link as LinkIcon, Image as ImageIcon, Camera, Check, Code } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import api from '../../utils/api';
@@ -16,13 +22,30 @@ export interface MarkdownEditorProps {
 
 export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChange, placeholder }) => {
   const [isDragging, setIsDragging] = useState(false);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
   const [isUploading, setIsUploading] = useState(false);
-  const contentRef = useRef<string>(content);
+  const [isContinuousCameraMode, setIsContinuousCameraMode] = useState(false);
+  const [isCodeMode, setIsCodeMode] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraFileInputRef = useRef<HTMLInputElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  // 同步 ref 保存最新的 content
+  // 保存内容ref用于insertAtCursor
+  const contentRef = useRef<string>(content);
   contentRef.current = content;
 
+  // 创建Markdown管理器，用于手动解析Markdown
+  const markdownManager = useMemo(() => {
+    return new MarkdownManager({
+      extensions: [
+        StarterKit,
+        ImageExtension,
+        Link,
+        Underline,
+      ],
+    });
+  }, []);
+
+  // 在光标处插入文本 (for code mode)
   const insertAtCursor = (before: string, after = '') => {
     const textarea = textareaRef.current || document.getElementById('markdown-editor') as HTMLTextAreaElement;
     if (!textarea) return;
@@ -59,8 +82,8 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         const img = new Image();
         img.onload = () => {
           // 计算压缩后的尺寸，保持宽高比，最大长边不超过 1920px
-          let maxWidth = 1920;
-          let maxHeight = 1920;
+          const maxWidth = 1920;
+          const maxHeight = 1920;
           let width = img.width;
           let height = img.height;
 
@@ -136,37 +159,135 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
     throw new Error(response.data.message || '上传失败');
   };
 
+  // Initialize Tiptap editor first for handlePaste
+  const initialContent = useMemo(() => {
+    return markdownManager.parse(content);
+  }, [markdownManager, content]);
+
+  const editor = useEditor({
+    extensions: [
+      StarterKit,
+      Markdown,
+      ImageExtension.configure({
+        HTMLAttributes: {
+          class: 'rounded-lg max-w-full h-auto',
+        },
+      }),
+      Link.configure({
+        openOnClick: false,
+        HTMLAttributes: {
+          class: 'text-blue-600 underline',
+          rel: 'noopener noreferrer',
+          target: '_blank',
+        },
+      }),
+      Underline,
+    ],
+    content: initialContent,
+    editorProps: {
+      attributes: {
+        class: 'prose prose-sm sm:prose-base max-w-none min-h-[200px] p-4 focus:outline-none markdown-body',
+        placeholder: placeholder || '开始输入内容...',
+      },
+      handlePaste: (_view, event) => {
+        // 让我们自己处理图片粘贴
+        const items = event.clipboardData?.items;
+        if (items) {
+          for (const item of items) {
+            if (item.type.indexOf('image') !== -1) {
+              handleImagePaste(event);
+              return true;
+            }
+          }
+        }
+        return false;
+      },
+    },
+    onUpdate: ({ editor }) => {
+      // Convert HTML back to Markdown and notify parent
+      const markdown = editor.getMarkdown();
+      onChange(markdown);
+    },
+  });
+
   const insertImage = async (file: File) => {
     if (!file.type.startsWith('image/')) {
       alert('只能上传图片文件');
+      // 如果上传失败且在连续拍照模式，停止模式
+      if (isContinuousCameraMode) {
+        stopContinuousCamera();
+      }
       return;
     }
     try {
       setIsUploading(true);
       const imageUrl = await uploadImage(file);
       const alt = file.name.replace(/\.[^/.]+$/, '');
-      insertAtCursor(`![${alt}](${imageUrl})`);
+      if (isCodeMode) {
+        // 代码模式：插入Markdown语法
+        insertAtCursor(`![${alt}](${imageUrl})`);
+      } else {
+        // 可视化模式：在Tiptap中插入图片
+        editor?.chain().focus().setImage({ src: imageUrl, alt }).run();
+      }
     } catch (error) {
       console.error('上传图片失败:', error);
       alert('图片上传失败，请重试');
+      // 上传失败时停止连续拍照模式，避免无限失败循环
+      if (isContinuousCameraMode) {
+        stopContinuousCamera();
+      }
     } finally {
       setIsUploading(false);
     }
   };
 
-  const handlePaste = async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
+  // 处理粘贴，检测图片
+  const handleImagePaste = (event: ClipboardEvent) => {
+    const items = event.clipboardData?.items;
     if (!items) return;
 
     for (const item of items) {
       if (item.type.indexOf('image') !== -1) {
-        e.preventDefault();
+        event.preventDefault();
         const file = item.getAsFile();
         if (file) {
-          await insertImage(file);
+          insertImage(file);
         }
         return;
       }
+    }
+  };
+
+  // 工具栏命令处理
+  const toggleBold = () => {
+    editor?.chain().focus().toggleBold().run();
+  };
+
+  const toggleItalic = () => {
+    editor?.chain().focus().toggleItalic().run();
+  };
+
+  const toggleHeading1 = () => {
+    editor?.chain().focus().toggleHeading({ level: 1 }).run();
+  };
+
+  const toggleHeading2 = () => {
+    editor?.chain().focus().toggleHeading({ level: 2 }).run();
+  };
+
+  const toggleBulletList = () => {
+    editor?.chain().focus().toggleBulletList().run();
+  };
+
+  const toggleOrderedList = () => {
+    editor?.chain().focus().toggleOrderedList().run();
+  };
+
+  const insertLink = () => {
+    const url = prompt('输入链接地址:');
+    if (url && editor) {
+      editor.chain().focus().setLink({ href: url }).run();
     }
   };
 
@@ -198,8 +319,6 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
     }
   };
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-
   const handleImageButtonClick = () => {
     fileInputRef.current?.click();
   };
@@ -218,9 +337,69 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
     e.target.value = '';
   };
 
+  // 连续拍照上传 - 开始拍照模式
+  const startContinuousCamera = () => {
+    setIsContinuousCameraMode(true);
+    // 延迟一点打开相机，确保状态已更新
+    setTimeout(() => {
+      cameraFileInputRef.current?.click();
+    }, 100);
+  };
+
+  // 结束拍照模式
+  const stopContinuousCamera = () => {
+    setIsContinuousCameraMode(false);
+    if (cameraFileInputRef.current) {
+      cameraFileInputRef.current.value = '';
+    }
+  };
+
+  // 处理拍照完成
+  const handleCameraChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) {
+      // 用户取消了拍照，如果是连续模式，继续等待下一次拍照
+      if (isContinuousCameraMode) {
+        e.target.value = '';
+        setTimeout(() => {
+          cameraFileInputRef.current?.click();
+        }, 500);
+      } else {
+        setIsContinuousCameraMode(false);
+      }
+      return;
+    }
+
+    const file = files[0];
+    if (file.type.startsWith('image/')) {
+      await insertImage(file);
+    }
+
+    // 清空 value，允许重复拍照
+    e.target.value = '';
+
+    // 如果还是连续拍照模式，自动重新打开相机
+    if (isContinuousCameraMode) {
+      setTimeout(() => {
+        cameraFileInputRef.current?.click();
+      }, 500);
+    }
+  };
+
+  // 当外部content变化时更新编辑器
+  React.useEffect(() => {
+    if (editor) {
+      const currentMarkdown = editor.getMarkdown();
+      if (content !== currentMarkdown) {
+        const jsonContent = markdownManager.parse(content);
+        editor.commands.setContent(jsonContent, { emitUpdate: false });
+      }
+    }
+  }, [content, editor, markdownManager]);
+
   return (
     <div
-      className="border border-gray-200 rounded-lg overflow-hidden relative"
+      className="border border-gray-200 rounded-lg overflow-hidden relative bg-white"
       onDragOver={handleDragOver}
       onDragLeave={handleDragLeave}
       onDrop={handleDrop}
@@ -233,72 +412,111 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         </div>
       )}
       <div className="flex flex-wrap gap-1 p-2 bg-gray-50 border-b border-gray-200">
+        {/* 模式切换 */}
         <button
           type="button"
-          onClick={() => insertAtCursor('**', '**')}
-          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
+          onClick={() => setIsCodeMode(!isCodeMode)}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300 border",
+            isCodeMode ? "bg-blue-100 border-blue-300 text-blue-700" : "hover:bg-gray-200 border-transparent"
+          )}
+          title={isCodeMode ? "当前：代码模式" : "当前：可视化模式"}
+        >
+          <Code className="w-4 h-4" />
+        </button>
+        <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
+        {/* 格式按钮 */}
+        <button
+          type="button"
+          onClick={toggleBold}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            !isCodeMode && editor?.isActive('bold') ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
           title="粗体"
+          disabled={isCodeMode}
         >
           <Bold className="w-4 h-4" />
         </button>
         <button
           type="button"
-          onClick={() => insertAtCursor('*', '*')}
-          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
+          onClick={toggleItalic}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            !isCodeMode && editor?.isActive('italic') ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
           title="斜体"
+          disabled={isCodeMode}
         >
           <Italic className="w-4 h-4" />
         </button>
         <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
           type="button"
-          onClick={() => insertAtCursor('# ')}
-          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors text-sm font-bold active:bg-gray-300"
+          onClick={toggleHeading1}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors text-sm font-bold active:bg-gray-300",
+            !isCodeMode && editor?.isActive('heading', { level: 1 }) ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
           title="标题"
+          disabled={isCodeMode}
         >
           H1
         </button>
         <button
           type="button"
-          onClick={() => insertAtCursor('## ')}
-          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors text-sm font-bold active:bg-gray-300"
+          onClick={toggleHeading2}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors text-sm font-bold active:bg-gray-300",
+            !isCodeMode && editor?.isActive('heading', { level: 2 }) ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
           title="二级标题"
+          disabled={isCodeMode}
         >
           H2
         </button>
         <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
           type="button"
-          onClick={() => insertAtCursor('- ')}
-          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
+          onClick={toggleBulletList}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            !isCodeMode && editor?.isActive('bulletList') ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
           title="无序列表"
+          disabled={isCodeMode}
         >
           <List className="w-4 h-4" />
         </button>
         <button
           type="button"
-          onClick={() => insertAtCursor('1. ')}
-          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
+          onClick={toggleOrderedList}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            !isCodeMode && editor?.isActive('orderedList') ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
           title="有序列表"
+          disabled={isCodeMode}
         >
           <ListOrdered className="w-4 h-4" />
         </button>
         <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
           type="button"
-          onClick={() => {
-            const url = prompt('输入链接地址:');
-            if (url) insertAtCursor('[链接文字](', ')');
-          }}
-          className="p-2 sm:p-3 rounded hover:bg-gray-200 transition-colors active:bg-gray-300"
+          onClick={insertLink}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            !isCodeMode && editor?.isActive('link') ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
           title="插入链接"
+          disabled={isCodeMode}
         >
           <LinkIcon className="w-4 h-4" />
         </button>
         <button
           type="button"
           onClick={handleImageButtonClick}
-          disabled={isUploading}
+          disabled={isUploading || isCodeMode}
           className={cn(
             "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
             isUploading ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "hover:bg-gray-200"
@@ -311,19 +529,74 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
             <ImageIcon className="w-4 h-4" />
           )}
         </button>
+        {isContinuousCameraMode ? (
+          <button
+            type="button"
+            onClick={stopContinuousCamera}
+            disabled={isUploading || isCodeMode}
+            className={cn(
+              "p-2 sm:p-3 rounded transition-colors active:bg-green-400 bg-green-100",
+              isUploading || isCodeMode ? "text-gray-400 cursor-not-allowed" : "hover:bg-green-200"
+            )}
+            title="完成拍照"
+          >
+            {isUploading ? (
+              <div className="w-4 h-4 border-2 border-gray-300 border-t-blue-600 rounded-full animate-spin" />
+            ) : (
+              <Check className="w-4 h-4 text-green-700" />
+            )}
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={startContinuousCamera}
+            disabled={isUploading || isCodeMode}
+            className={cn(
+              "p-2 sm:p-3 rounded transition-colors active:bg-blue-300",
+              (isUploading || isCodeMode) ? "bg-gray-100 text-gray-400 cursor-not-allowed" : "hover:bg-gray-200"
+            )}
+            title="连续拍照上传"
+          >
+            <Camera className="w-4 h-4" />
+          </button>
+        )}
       </div>
-      <textarea
-        ref={textareaRef}
-        id="markdown-editor"
-        value={content}
-        onChange={(e) => onChange(e.target.value)}
-        onPaste={handlePaste}
-        placeholder={placeholder || '开始输入内容...\n💡 提示: 可以直接从剪贴板粘贴图片，或将图片拖拽到这里'}
-        className="w-full p-4 min-h-[200px] resize-y focus:outline-none text-base"
-        style={{ fontFamily: 'Consolas, Monaco, "Courier New", monospace' }}
-      />
+
+      {/* 可视化模式: Tiptap所见即所得 */}
+      {!isCodeMode && <EditorContent editor={editor} />}
+
+      {/* 代码模式: 纯文本textarea编辑 */}
+      {isCodeMode && (
+        <textarea
+          ref={textareaRef}
+          id="markdown-editor"
+          value={content}
+          onChange={(e) => onChange(e.target.value)}
+          onPaste={(e) => {
+            const items = e.clipboardData?.items;
+            if (!items) return;
+
+            for (const item of items) {
+              if (item.type.indexOf('image') !== -1) {
+                e.preventDefault();
+                const file = item.getAsFile();
+                if (file) {
+                  insertImage(file);
+                }
+                return;
+              }
+            }
+          }}
+          placeholder={placeholder || '开始输入内容...\n💡 提示: 可以直接从剪贴板粘贴图片，或将图片拖拽到这里'}
+          className="w-full p-4 min-h-[200px] resize-y focus:outline-none text-base"
+          style={{ fontFamily: 'Consolas, Monaco, "Courier New", monospace' }}
+        />
+      )}
+
       <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
-        💡 提示: 支持 <kbd className="px-2 py-0.5 bg-gray-200 rounded">Ctrl+V</kbd> 粘贴剪贴板图片 · 拖拽图片到此处插入
+        💡 {isCodeMode ? '代码模式: 直接编辑Markdown源代码' : '可视化模式: 所见即所得，图片实时显示'}
+        <span className="ml-2">支持 <kbd className="px-2 py-0.5 bg-gray-200 rounded">Ctrl+V</kbd> 粘贴剪贴板图片 · 拖拽图片到此处插入</span>
+        {isContinuousCameraMode && <span className="ml-2 text-blue-600 font-medium">📸 连续拍照模式已开启，拍完一张自动拍下一张</span>}
       </div>
       <input
         ref={fileInputRef}
@@ -331,6 +604,14 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         accept="image/*"
         multiple
         onChange={handleFileChange}
+        className="hidden"
+      />
+      <input
+        ref={cameraFileInputRef}
+        type="file"
+        accept="image/*"
+        capture="environment"
+        onChange={handleCameraChange}
         className="hidden"
       />
     </div>

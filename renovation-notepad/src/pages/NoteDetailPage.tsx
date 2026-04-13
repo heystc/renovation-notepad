@@ -146,6 +146,17 @@ export const NoteDetailPage = () => {
           </div>
         </div>
       </main>
+
+      {/* 悬浮编辑按钮 */}
+      <div className="fixed bottom-6 right-6 z-50">
+        <Link
+          to={`/edit/${note.id}`}
+          className="flex items-center gap-2 bg-blue-600 text-white px-6 py-3 rounded-full shadow-lg hover:bg-blue-700 transition-all hover:shadow-xl active:scale-95"
+        >
+          <Edit className="w-5 h-5" />
+          <span className="font-medium">编辑笔记</span>
+        </Link>
+      </div>
     </div>
   );
 };

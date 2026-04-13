@@ -5,7 +5,7 @@
 export const renderMarkdown = (md: string): string => {
   if (!md) return '';
 
-  let html = md
+  const html = md
     .replace(/^### (.*$)/gim, '<h3>$1</h3>')
     .replace(/^## (.*$)/gim, '<h2>$1</h2>')
     .replace(/^# (.*$)/gim, '<h1>$1</h1>')

@@ -19,6 +19,15 @@ export const CreateNotePage = () => {
   const [budget, setBudget] = useState('');
   const [actualCost, setActualCost] = useState('');
   const [isSaving, setIsSaving] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
+
+  // 显示toast消息，自动消失
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => {
+      setToastMessage('');
+    }, 3000);
+  };
 
   const loadSettings = async () => {
     try {
@@ -87,7 +96,8 @@ export const CreateNotePage = () => {
           actualCost: actualCost ? Number(actualCost) : undefined,
         });
         if (res.data.success) {
-          navigate(`/note/${id}`);
+          // 保存成功后留在编辑页面，允许继续编辑
+          showToast('保存成功');
         }
       } else {
         const res = await api.post('/notes', {
@@ -101,12 +111,13 @@ export const CreateNotePage = () => {
           actualCost: actualCost ? Number(actualCost) : undefined,
         });
         if (res.data.success) {
-          navigate(`/note/${res.data.note.id}`);
+          // 新建保存成功后跳转到编辑该笔记页面，继续编辑
+          navigate(`/edit/${res.data.note.id}`);
         }
       }
     } catch (error) {
       console.error('保存失败:', error);
-      alert('保存失败，请重试');
+      showToast('保存失败，请重试');
     } finally {
       setIsSaving(false);
     }
@@ -230,31 +241,42 @@ export const CreateNotePage = () => {
             </div>
           </div>
 
-          <div>
+          <div className="pb-24">
             <MarkdownEditor
               content={content}
               onChange={setContent}
               placeholder="内容 (Markdown)"
             />
           </div>
+        </form>
 
-          <div className="flex gap-3">
+        {/* 悬浮操作按钮 */}
+        <div className="fixed bottom-6 left-0 right-0 z-50 px-4">
+          <div className="max-w-4xl mx-auto flex gap-3">
             <button
               type="button"
-              onClick={() => navigate('/')}
-              className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors"
+              onClick={() => navigate(isEdit ? `/note/${id}` : '/')}
+              className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg font-medium hover:bg-gray-50 transition-colors bg-white shadow-lg"
             >
               取消
             </button>
             <button
-              type="submit"
+              type="button"
+              onClick={handleSubmit}
               disabled={isSaving || !title.trim()}
-              className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-base"
+              className="flex-1 bg-blue-600 text-white py-3 rounded-lg font-medium hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed transition-colors text-base shadow-lg"
             >
               {isSaving ? '保存中...' : '保存笔记'}
             </button>
           </div>
-        </form>
+        </div>
+
+        {/* Toast消息提醒 */}
+        {toastMessage && (
+          <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-gray-900 text-white px-6 py-3 rounded-lg shadow-xl animate-fade-in-out">
+            {toastMessage}
+          </div>
+        )}
       </main>
     </div>
   );
