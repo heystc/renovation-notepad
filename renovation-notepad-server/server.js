@@ -163,6 +163,7 @@ const readSettings = () => {
         {
           id: 'default',
           name: '默认分组',
+          icon: 'home',
           enableFilter: true,
           tags: parsed.tags
         }
@@ -174,11 +175,19 @@ const readSettings = () => {
         {
           id: 'default',
           name: '默认分组',
+          icon: 'home',
           enableFilter: true,
           tags: parsed.tags
         }
       ];
     }
+    // 向后兼容：为每个分组确保 icon 字段存在
+    parsed.tagGroups = parsed.tagGroups.map(group => {
+      if (!group.hasOwnProperty('icon')) {
+        return { ...group, icon: 'home' };
+      }
+      return group;
+    });
     return parsed;
   }
   return {

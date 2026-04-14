@@ -505,7 +505,7 @@ export const HomePage: React.FC<HomePageProps> = ({
                           )}
                         >
                           {group.icon && getRoomIcon(group.icon)}
-                          全部 {group.name}
+                          全部{group.name}
                         </button>
                         {group.tags.map(tag => (
                           <button

@@ -1,7 +1,7 @@
-import React, { useRef, useState, useMemo } from 'react';
+import React, { useRef, useState, useMemo, useEffect } from 'react';
 import { useEditor, EditorContent } from '@tiptap/react';
 import { StarterKit } from '@tiptap/starter-kit';
-import { Markdown, MarkdownManager } from '@tiptap/markdown';
+import { MarkdownManager } from '@tiptap/markdown';
 import ImageExtension from '@tiptap/extension-image';
 import { Link } from '@tiptap/extension-link';
 import { Underline } from '@tiptap/extension-underline';
@@ -25,6 +25,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
   const [isUploading, setIsUploading] = useState(false);
   const [isContinuousCameraMode, setIsContinuousCameraMode] = useState(false);
   const [isCodeMode, setIsCodeMode] = useState(false);
+  const [parseError, setParseError] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraFileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -32,6 +33,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
   // 保存内容ref用于insertAtCursor
   const contentRef = useRef<string>(content);
   contentRef.current = content;
+
+  // 标记是否已经应用过开头占位符修复，避免无限循环
+  const hasAppliedPlaceholder = useRef(false);
+  // 记录最后一次同步到编辑器的内容，避免不必要更新导致光标丢失
+  const lastSyncedContent = useRef<string>('');
 
   // 创建Markdown管理器，用于手动解析Markdown
   const markdownManager = useMemo(() => {
@@ -43,6 +49,21 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         Underline,
       ],
     });
+  }, []);
+
+  // 捕获全局错误，当ProseMirror发生内容错误时自动切换到代码模式
+  useEffect(() => {
+    const handleError = (event: ErrorEvent) => {
+      const error = event.error;
+      if (error instanceof RangeError && error.message.includes('Invalid content for node paragraph')) {
+        console.warn('Detected ProseMirror content error for multiple images, switching to code mode');
+        setParseError(true);
+        setIsCodeMode(true);
+      }
+    };
+
+    window.addEventListener('error', handleError);
+    return () => window.removeEventListener('error', handleError);
   }, []);
 
   // 在光标处插入文本 (for code mode)
@@ -69,10 +90,14 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
     }, 0);
   };
 
-  // 压缩图片
+  // 压缩图片配置常量
+  const MAX_IMAGE_DIMENSION = 1920;
+  const MIN_SIZE_FOR_COMPRESSION = 1024 * 1024; // 1MB
+  const COMPRESSION_QUALITY = 0.9;
+
   const compressImage = async (file: File): Promise<Blob> => {
     // 如果图片较小，不压缩（小于 1MB）
-    if (file.size < 1024 * 1024) {
+    if (file.size < MIN_SIZE_FOR_COMPRESSION) {
       return file;
     }
 
@@ -81,9 +106,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
       reader.onload = (e) => {
         const img = new Image();
         img.onload = () => {
-          // 计算压缩后的尺寸，保持宽高比，最大长边不超过 1920px
-          const maxWidth = 1920;
-          const maxHeight = 1920;
+          // 计算压缩后的尺寸，保持宽高比，最大长边不超过 MAX_IMAGE_DIMENSION
+          const maxWidth = MAX_IMAGE_DIMENSION;
+          const maxHeight = MAX_IMAGE_DIMENSION;
           let width = img.width;
           let height = img.height;
 
@@ -120,7 +145,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
             } else {
               resolve(file);
             }
-          }, 'image/jpeg', 0.9);
+          }, 'image/jpeg', COMPRESSION_QUALITY);
         };
         img.onerror = () => {
           resolve(file);
@@ -160,14 +185,50 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
   };
 
   // Initialize Tiptap editor first for handlePaste
-  const initialContent = useMemo(() => {
-    return markdownManager.parse(content);
-  }, [markdownManager, content]);
+  const processedContent = useMemo(() => {
+    try {
+      let processed = content;
+
+      // ==============================
+      // 兼容性预处理：为图片添加前后空行
+      // Tiptap/ProseMirror 要求块级图片前后必须有空行，否则多个图片会被放在同一个 paragraph 导致解析错误
+      // 自动给所有 ![...]() 添加前后空行，不改变原始内容语义，只保证解析正确
+      // ==============================
+      // 1. 给每个图片前后添加空行
+      processed = processed.replace(/(!\[.*?\]\(.*?\))/g, '\n\n$1\n\n');
+      // 2. 合并连续多个空行为两个，避免过多空行
+      processed = processed.replace(/\n{3,}/g, '\n\n');
+      // 3. 去除开头和结尾多余空行
+      processed = processed.trim();
+
+      // Workaround for Tiptap markdown bug: document starting with image causes parsing/serialization error
+      // If content starts with image (![...]), add an empty placeholder at the beginning to avoid the bug
+      // Empty placeholder doesn't affect rendering and doesn't affect content
+      const trimmed = processed.trimStart();
+      if (trimmed.startsWith('![')) {
+        processed = '# \n\n' + processed;
+      }
+
+      return processed;
+    } catch (error) {
+      return content;
+    }
+  }, [content]);
+
+  // If we modified the content (added placeholder), update parent state once after render
+  useEffect(() => {
+    if (processedContent !== content && !hasAppliedPlaceholder.current) {
+      hasAppliedPlaceholder.current = true;
+      onChange(processedContent);
+    }
+  }, [processedContent, content, onChange]);
 
   const editor = useEditor({
     extensions: [
-      StarterKit,
-      Markdown,
+      StarterKit.configure({
+        // We handle markdown conversion ourselves using markdownManager
+        // Avoid conflict with Markdown extension
+      }),
       ImageExtension.configure({
         HTMLAttributes: {
           class: 'rounded-lg max-w-full h-auto',
@@ -183,7 +244,9 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
       }),
       Underline,
     ],
-    content: initialContent,
+    // Start with empty content, we'll set it in useEffect
+    // This prevents editor from being recreated on every content change
+    content: '',
     editorProps: {
       attributes: {
         class: 'prose prose-sm sm:prose-base max-w-none min-h-[200px] p-4 focus:outline-none markdown-body',
@@ -204,9 +267,19 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
       },
     },
     onUpdate: ({ editor }) => {
-      // Convert HTML back to Markdown and notify parent
-      const markdown = editor.getMarkdown();
-      onChange(markdown);
+      // Convert HTML back to Markdown using markdownManager
+      // Using markdownManager instead of editor.getMarkdown() for better compatibility with multiple images
+      try {
+        const json = editor.getJSON();
+        const markdown = markdownManager.serialize(json);
+        lastSyncedContent.current = markdown;
+        onChange(markdown);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Failed to convert editor content to Markdown:', errorMessage);
+        setParseError(true);
+        setIsCodeMode(true);
+      }
     },
   });
 
@@ -387,15 +460,22 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
   };
 
   // 当外部content变化时更新编辑器
+  // 只在内容真正改变时（比如打开不同笔记）才更新，避免每次输入都覆盖编辑器内容导致光标丢失
   React.useEffect(() => {
-    if (editor) {
-      const currentMarkdown = editor.getMarkdown();
-      if (content !== currentMarkdown) {
+    if (editor && !isCodeMode && content !== lastSyncedContent.current) {
+      try {
         const jsonContent = markdownManager.parse(content);
         editor.commands.setContent(jsonContent, { emitUpdate: false });
+        lastSyncedContent.current = content;
+        setParseError(false);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error('Failed to update Markdown for visual editor, switching to code mode:', errorMessage);
+        setParseError(true);
+        setIsCodeMode(true);
       }
     }
-  }, [content, editor, markdownManager]);
+  }, [content, editor, markdownManager, isCodeMode]);
 
   return (
     <div
@@ -593,10 +673,11 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         />
       )}
 
-      <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500">
+      <div className="px-4 py-2 bg-gray-50 border-t border-gray-200 text-xs text-gray-500 flex flex-wrap items-center gap-2">
         💡 {isCodeMode ? '代码模式: 直接编辑Markdown源代码' : '可视化模式: 所见即所得，图片实时显示'}
         <span className="ml-2">支持 <kbd className="px-2 py-0.5 bg-gray-200 rounded">Ctrl+V</kbd> 粘贴剪贴板图片 · 拖拽图片到此处插入</span>
         {isContinuousCameraMode && <span className="ml-2 text-blue-600 font-medium">📸 连续拍照模式已开启，拍完一张自动拍下一张</span>}
+        {parseError && <span className="ml-2 text-red-600 font-medium">⚠️ 可视化解析失败，已自动切换到代码模式</span>}
       </div>
       <input
         ref={fileInputRef}

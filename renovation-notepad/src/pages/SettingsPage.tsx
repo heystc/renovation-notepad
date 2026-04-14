@@ -117,6 +117,20 @@ export const SettingsPage = () => {
     { type: 'group', groupId: string } | null
   >(null);
 
+  // 默认展开所有分组，只添加新分组，不改变现有展开状态
+  useEffect(() => {
+    setExpandedGroups(prev => {
+      const next = new Set(prev);
+      settings.tagGroups.forEach(group => {
+        // 只添加新分组，如果已经存在（不管是展开还是收起）保持用户当前状态
+        if (!prev.has(group.id)) {
+          next.add(group.id);
+        }
+      });
+      return next;
+    });
+  }, [settings.tagGroups]);
+
   // 打开标签图标选择器
   const openIconPicker = (groupId: string, tagIndex: number) => {
     setIconPickerTarget({ type: 'tag', groupId, tagIndex });
