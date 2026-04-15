@@ -1,0 +1,151 @@
+{
+  "version": "1.0",
+  "lastModified": "2026-04-15T08:21:43.608Z",
+  "categories": [
+    {
+      "id": "idea",
+      "label": "灵感",
+      "color": "bg-amber-100 text-amber-700"
+    },
+    {
+      "id": "product",
+      "label": "产品",
+      "color": "bg-blue-100 text-blue-700"
+    },
+    {
+      "id": "cost",
+      "label": "费用",
+      "color": "bg-green-100 text-green-700"
+    },
+    {
+      "id": "file",
+      "label": "文件",
+      "color": "bg-purple-100 text-purple-700"
+    },
+    {
+      "id": "image",
+      "label": "图片",
+      "color": "bg-pink-100 text-pink-700"
+    },
+    {
+      "id": "mniihk2x",
+      "label": "坑",
+      "color": "bg-gray-100 text-gray-700"
+    }
+  ],
+  "statuses": [
+    {
+      "id": "todo",
+      "label": "待办",
+      "color": "bg-amber-100 text-amber-700",
+      "icon": "alert"
+    },
+    {
+      "id": "in-progress",
+      "label": "进行中",
+      "color": "bg-blue-100 text-blue-700",
+      "icon": "clock"
+    },
+    {
+      "id": "done",
+      "label": "已完成",
+      "color": "bg-green-100 text-green-700",
+      "icon": "check"
+    }
+  ],
+  "appName": "装修笔记本",
+  "logo": null,
+  "tagGroups": [
+    {
+      "id": "default",
+      "name": "房间",
+      "enableFilter": true,
+      "tags": [
+        {
+          "id": "living",
+          "label": "客厅",
+          "icon": "sofa"
+        },
+        {
+          "id": "kitchen",
+          "label": "厨房",
+          "icon": "utensils"
+        },
+        {
+          "id": "dining",
+          "label": "餐厅",
+          "icon": "utensils"
+        },
+        {
+          "id": "guest-bath",
+          "label": "客卫",
+          "icon": "bath"
+        },
+        {
+          "id": "master-bed",
+          "label": "主卧",
+          "icon": "bed"
+        },
+        {
+          "id": "master-bath",
+          "label": "主卫",
+          "icon": "bath"
+        },
+        {
+          "id": "study",
+          "label": "书房",
+          "icon": "book"
+        },
+        {
+          "id": "boy-room",
+          "label": "男孩房",
+          "icon": "user"
+        },
+        {
+          "id": "girl-room",
+          "label": "女孩房",
+          "icon": "user"
+        },
+        {
+          "id": "balcony",
+          "label": "阳台",
+          "icon": "flower"
+        }
+      ],
+      "icon": "home"
+    },
+    {
+      "id": "mnwzqrho",
+      "name": "工种",
+      "enableFilter": true,
+      "tags": [
+        {
+          "id": "mnwzrefp",
+          "label": "水电",
+          "icon": "home"
+        },
+        {
+          "id": "mnwzrwsj",
+          "label": "局改",
+          "icon": "home"
+        },
+        {
+          "id": "mnwzs3cj",
+          "label": "油漆",
+          "icon": "home"
+        },
+        {
+          "id": "mnwzsdq9",
+          "label": "定制柜",
+          "icon": "home"
+        },
+        {
+          "id": "mnwzswue",
+          "label": "厨柜",
+          "icon": "home"
+        }
+      ],
+      "icon": "wrench"
+    }
+  ]
+}

@@ -781,7 +781,8 @@ app.post('/api/users', authMiddleware, (req, res) => {
 
     res.json({
       success: true,
-      user: { username: newUser.username, isAdmin: newUser.isAdmin }
+      user: { username: newUser.username, isAdmin: newUser.isAdmin },
+      users: usersData.users.map(u => ({ username: u.username, isAdmin: u.isAdmin }))
     });
   } catch (error) {
     console.error('Error creating user:', error);
@@ -803,7 +804,11 @@ app.delete('/api/users/:username', authMiddleware, (req, res) => {
     usersData.users = usersData.users.filter(u => u.username !== username);
     fs.writeFileSync(USERS_FILE, JSON.stringify(usersData, null, 2), 'utf-8');
 
-    res.json({ success: true, message: '删除成功' });
+    res.json({
+      success: true,
+      message: '删除成功',
+      users: usersData.users.map(u => ({ username: u.username, isAdmin: u.isAdmin }))
+    });
   } catch (error) {
     console.error('Error deleting user:', error);
     res.status(500).json({ success: false, message: 'Failed to delete user' });
@@ -831,7 +836,8 @@ app.put('/api/users/:username', authMiddleware, (req, res) => {
       user: {
         username: usersData.users[userIndex].username,
         isAdmin: usersData.users[userIndex].isAdmin
-      }
+      },
+      users: usersData.users.map(u => ({ username: u.username, isAdmin: u.isAdmin }))
     });
   } catch (error) {
     console.error('Error updating user:', error);

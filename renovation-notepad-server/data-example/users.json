@@ -1,0 +1,14 @@
+{
+  "users": [
+    {
+      "username": "admin",
+      "passwordHash": "8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918",
+      "isAdmin": true
+    },
+    {
+      "username": "heyong",
+      "passwordHash": "38e814889b045684514ef1224734582cd8efab3aa165f979f60a66b1ee9c2a53",
+      "isAdmin": false
+    }
+  ]
+}
