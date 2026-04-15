@@ -8,15 +8,47 @@ import { getStatusIcon } from '../../utils/icons';
 import api from '../../utils/api';
 
 // 所有可用图标列表
+// 分类整理：基础/房间/职业行业/人物/产品商品/交通/医疗/教育/美食/旅行/运动/科技/自然
 const AVAILABLE_ICONS = [
-  'home', 'sofa', 'utensils', 'bath', 'bed', 'book', 'user', 'flower',
-  'shopping-bag', 'coffee', 'tv', 'wifi', 'key', 'door-open', 'lamp',
-  'paintbrush', 'tool', 'hammer', 'wrench', 'settings', 'calendar',
-  'map', 'image', 'file', 'folder', 'heart', 'star', 'check', 'alert',
-  'clock', 'dollar-sign', 'credit-card', 'gift', 'camera', 'phone',
-  'laptop', 'monitor', 'building', 'house', 'tree', 'cloud', 'sun',
-  'moon', 'water', 'fire', 'wind', 'leaf', 'paw-print', 'utensils-crossed',
-  'scissors', 'pen-tool', 'mouse', 'keyboard', 'hard-drive', 'server'
+  // 基础
+  'home', 'settings', 'calendar', 'map', 'file', 'folder',
+  'heart', 'star', 'check', 'alert', 'clock', 'gift', 'image',
+  // 房间/家居
+  'sofa', 'bed', 'bath', 'lamp', 'door-open', 'key',
+  'tv', 'wifi', 'paintbrush', 'coffee',
+  // 厨具/餐饮
+  'utensils', 'utensils-crossed', 'coffee', 'cup-soda', 'beer', 'wine',
+  // 工具/维修
+  'tool', 'hammer', 'wrench', 'scissors', 'saw', 'screwdriver',
+  // 职业/行业
+  'briefcase', 'business', 'user', 'users', 'user-check', 'user-plus',
+  'doctor', 'nurse', 'teacher', 'chef-hat', 'hard-hat', 'graduation-cap',
+  'pencil', 'pen', 'code', 'code-2', 'camera', 'video', 'mic', 'headphones',
+  'store', 'shopping-bag', 'shopping-cart', 'credit-card', 'dollar-sign',
+  'factory', 'building', 'car', 'truck', 'plane', 'ship',
+  // 人物/社交
+  'user', 'users', 'user-circle', 'users-round', 'handshake', 'heart',
+  // 教育/学习
+  'book', 'book-open', 'graduation-cap', 'school', 'library', 'pencil',
+  // 医疗健康
+  'heart', 'activity', 'pill', 'syringe', 'thermometer', 'stethoscope',
+  // 科技电子
+  'laptop', 'monitor', 'phone', 'smartphone', 'tablet', 'camera', 'webcam',
+  'mouse', 'keyboard', 'hard-drive', 'server', 'cpu', 'battery', 'bluetooth',
+  'wifi', 'router', 'zap', 'code', 'terminal',
+  // 自然/户外
+  'tree', 'flower', 'leaf', 'paw-print', 'cloud', 'sun', 'moon',
+  'water', 'fire', 'wind', 'mountain', 'beach', 'umbrella',
+  // 交通出行
+  'car', 'bus', 'train', 'plane', 'bicycle', 'motorcycle', 'ship', 'truck',
+  // 体育运动
+  'activity', 'baseball', 'basketball', 'football', 'running', 'swim', 'trophy',
+  // 艺术文化
+  'palette', 'paintbrush', 'music', 'guitar', 'film', 'clapperboard',
+  // 家居生活用品
+  'brush', 'soap', 'spray-can', 'vacuum', 'washing-machine',
+  // 金融商务
+  'bank-card', 'credit-card', 'dollar-sign', 'wallet', 'piggy-bank', 'briefcase'
 ] as const;
 
 function cn(...inputs: ClassValue[]) {
@@ -711,7 +743,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                                   <X className="w-5 h-5" />
                                 </button>
                               </div>
-                              <div className="p-4 overflow-y-auto">
+                              <div className="p-4 overflow-y-auto flex-1">
                                 <div className="grid grid-cols-6 sm:grid-cols-8 gap-2">
                                   {AVAILABLE_ICONS.map(iconName => {
                                     const IconComp = getIconComponent(iconName);

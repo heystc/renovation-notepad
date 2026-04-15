@@ -6,18 +6,6 @@ import { DEFAULT_SETTINGS } from '../constants/defaultData';
 import api from '../utils/api';
 import * as Icons from 'lucide-react';
 
-// 所有可用图标列表
-const AVAILABLE_ICONS = [
-  'home', 'sofa', 'utensils', 'bath', 'bed', 'book', 'user', 'flower',
-  'shopping-bag', 'coffee', 'tv', 'wifi', 'key', 'door-open', 'lamp',
-  'paintbrush', 'tool', 'hammer', 'wrench', 'settings', 'calendar',
-  'map', 'image', 'file', 'folder', 'heart', 'star', 'check', 'alert',
-  'clock', 'dollar-sign', 'credit-card', 'gift', 'camera', 'phone',
-  'laptop', 'monitor', 'building', 'house', 'tree', 'cloud', 'sun',
-  'moon', 'water', 'fire', 'wind', 'leaf', 'paw-print', 'utensils-crossed',
-  'scissors', 'pen-tool', 'mouse', 'keyboard', 'hard-drive', 'server'
-] as const;
-
 export const SettingsPage = () => {
   const navigate = useNavigate();
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
@@ -553,7 +541,7 @@ export const SettingsPage = () => {
                                 <X className="w-5 h-5" />
                               </button>
                             </div>
-                            <div className="p-4 overflow-y-auto">
+                            <div className="p-4 overflow-y-auto flex-1">
                               <div className="grid grid-cols-6 sm:grid-cols-8 gap-2">
                                 {AVAILABLE_ICONS.map(iconName => {
                                   const IconComp = getIconComponent(iconName);
