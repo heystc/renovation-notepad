@@ -202,9 +202,6 @@ export const CreateNotePage = () => {
               {settings.tagGroups && settings.tagGroups.length > 0 ? (
                 settings.tagGroups.map(group => (
                   <div key={group.id} className="space-y-1">
-                    {settings.tagGroups.length > 1 && (
-                      <div className="text-xs font-medium text-gray-500 px-1">{group.name}</div>
-                    )}
                     <div className="grid grid-cols-2 sm:grid-cols-3 gap-1">
                       {group.tags.map(tag => (
                         <label key={tag.id} className="flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer hover:bg-gray-50 transition-colors">

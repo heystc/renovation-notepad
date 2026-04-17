@@ -5,7 +5,16 @@ import { MarkdownManager } from '@tiptap/markdown';
 import ImageExtension from '@tiptap/extension-image';
 import { Link } from '@tiptap/extension-link';
 import { Underline } from '@tiptap/extension-underline';
-import { Bold, Italic, List, ListOrdered, Link as LinkIcon, Image as ImageIcon, Camera, Check, Code } from 'lucide-react';
+import { TextStyle } from '@tiptap/extension-text-style';
+import { Color } from '@tiptap/extension-color';
+import { Highlight } from '@tiptap/extension-highlight';
+import { Table } from '@tiptap/extension-table';
+import { TableRow } from '@tiptap/extension-table-row';
+import { TableCell } from '@tiptap/extension-table-cell';
+import { TableHeader } from '@tiptap/extension-table-header';
+import { TaskList } from '@tiptap/extension-task-list';
+import { TaskItem } from '@tiptap/extension-task-item';
+import { Bold, Italic, List, ListOrdered, Link as LinkIcon, Image as ImageIcon, Camera, Check, Code, Strikethrough, Underline as UnderlineIcon, ListTodo, Table as TableIcon, Palette } from 'lucide-react';
 import { clsx, type ClassValue } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 import api from '../../utils/api';
@@ -26,9 +35,27 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
   const [isContinuousCameraMode, setIsContinuousCameraMode] = useState(false);
   const [isCodeMode, setIsCodeMode] = useState(false);
   const [parseError, setParseError] = useState(false);
+  const [showTextColorPalette, setShowTextColorPalette] = useState(false);
+  const [showHighlightPalette, setShowHighlightPalette] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraFileInputRef = useRef<HTMLInputElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const textColorRef = useRef<HTMLDivElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
+
+  // 点击外部关闭颜色面板
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (textColorRef.current && !textColorRef.current.contains(event.target as Node)) {
+        setShowTextColorPalette(false);
+      }
+      if (highlightRef.current && !highlightRef.current.contains(event.target as Node)) {
+        setShowHighlightPalette(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
 
   // 保存内容ref用于insertAtCursor
   const contentRef = useRef<string>(content);
@@ -43,10 +70,21 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
   const markdownManager = useMemo(() => {
     return new MarkdownManager({
       extensions: [
-        StarterKit,
+        StarterKit.configure({
+          strike: {},
+        }),
         ImageExtension,
         Link,
         Underline,
+        TextStyle,
+        Color,
+        Highlight,
+        Table,
+        TableRow,
+        TableCell,
+        TableHeader,
+        TaskList,
+        TaskItem,
       ],
     });
   }, []);
@@ -228,6 +266,7 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
       StarterKit.configure({
         // We handle markdown conversion ourselves using markdownManager
         // Avoid conflict with Markdown extension
+        strike: {},
       }),
       ImageExtension.configure({
         HTMLAttributes: {
@@ -243,6 +282,39 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         },
       }),
       Underline,
+      TextStyle,
+      Color,
+      Highlight.configure({
+        multicolor: true,
+      }),
+      Table.configure({
+        resizable: true,
+        HTMLAttributes: {
+          class: 'border-collapse table-auto w-full my-4',
+        },
+      }),
+      TableRow,
+      TableCell.configure({
+        HTMLAttributes: {
+          class: 'border border-gray-300 p-2 align-top',
+        },
+      }),
+      TableHeader.configure({
+        HTMLAttributes: {
+          class: 'border border-gray-300 p-2 bg-gray-50 font-semibold align-top',
+        },
+      }),
+      TaskList.configure({
+        HTMLAttributes: {
+          class: 'task-list',
+        },
+      }),
+      TaskItem.configure({
+        nested: true,
+        HTMLAttributes: {
+          class: 'task-item',
+        },
+      }),
     ],
     // Start with empty content, we'll set it in useEffect
     // This prevents editor from being recreated on every content change
@@ -355,6 +427,38 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
 
   const toggleOrderedList = () => {
     editor?.chain().focus().toggleOrderedList().run();
+  };
+
+  const toggleStrike = () => {
+    editor?.chain().focus().toggleStrike().run();
+  };
+
+  const toggleUnderline = () => {
+    editor?.chain().focus().toggleUnderline().run();
+  };
+
+  const toggleTaskList = () => {
+    editor?.chain().focus().toggleTaskList().run();
+  };
+
+  const insertTable = () => {
+    editor?.chain().focus().insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run();
+  };
+
+  const setTextColor = (color: string) => {
+    editor?.chain().focus().setColor(color).run();
+  };
+
+  const setHighlightColor = (color: string) => {
+    editor?.chain().focus().toggleHighlight({ color }).run();
+  };
+
+  const unsetTextColor = () => {
+    editor?.chain().focus().unsetColor().run();
+  };
+
+  const unsetHighlightColor = () => {
+    editor?.chain().focus().toggleHighlight().run();
   };
 
   const insertLink = () => {
@@ -530,6 +634,30 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         >
           <Italic className="w-4 h-4" />
         </button>
+        <button
+          type="button"
+          onClick={toggleStrike}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            !isCodeMode && editor?.isActive('strike') ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
+          title="删除线"
+          disabled={isCodeMode}
+        >
+          <Strikethrough className="w-4 h-4" />
+        </button>
+        <button
+          type="button"
+          onClick={toggleUnderline}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            !isCodeMode && editor?.isActive('underline') ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
+          title="下划线"
+          disabled={isCodeMode}
+        >
+          <UnderlineIcon className="w-4 h-4" />
+        </button>
         <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
           type="button"
@@ -580,6 +708,115 @@ export const MarkdownEditor: React.FC<MarkdownEditorProps> = ({ content, onChang
         >
           <ListOrdered className="w-4 h-4" />
         </button>
+        <button
+          type="button"
+          onClick={toggleTaskList}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            !isCodeMode && editor?.isActive('taskList') ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
+          title="任务列表"
+          disabled={isCodeMode}
+        >
+          <ListTodo className="w-4 h-4" />
+        </button>
+        <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
+        <button
+          type="button"
+          onClick={insertTable}
+          className={cn(
+            "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+            !isCodeMode && editor?.isActive('table') ? "bg-gray-200" : "hover:bg-gray-200"
+          )}
+          title="插入表格"
+          disabled={isCodeMode}
+        >
+          <TableIcon className="w-4 h-4" />
+        </button>
+        <div className="relative" ref={textColorRef}>
+          <button
+            type="button"
+            onClick={() => setShowTextColorPalette(!showTextColorPalette)}
+            className={cn(
+              "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+              (showTextColorPalette || (!isCodeMode && editor?.isActive('color'))) ? "bg-gray-200" : "hover:bg-gray-200"
+            )}
+            title="文字颜色"
+            disabled={isCodeMode}
+          >
+            <Palette className="w-4 h-4" />
+          </button>
+          {showTextColorPalette && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-20 grid grid-cols-6 gap-1 w-48">
+              {['#000000', '#ef4444', '#f97316', '#eab308', '#22c55e', '#06b6d4', '#3b82f6', '#8b5cf6', '#ec4899', '#f43f5e', '#a8a29e', '#78716c'].map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => {
+                    setTextColor(color);
+                    setShowTextColorPalette(false);
+                  }}
+                  className="w-6 h-6 rounded border border-gray-300 cursor-pointer hover:scale-110 transition-transform"
+                  style={{ backgroundColor: color }}
+                  title={color}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  unsetTextColor();
+                  setShowTextColorPalette(false);
+                }}
+                className="w-6 h-6 rounded border border-gray-300 bg-white flex items-center justify-center text-xs text-gray-500 hover:bg-gray-50"
+                title="清除颜色"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
+        <div className="relative" ref={highlightRef}>
+          <button
+            type="button"
+            onClick={() => setShowHighlightPalette(!showHighlightPalette)}
+            className={cn(
+              "p-2 sm:p-3 rounded transition-colors active:bg-gray-300",
+              (showHighlightPalette || (!isCodeMode && editor?.isActive('highlight'))) ? "bg-gray-200" : "hover:bg-gray-200"
+            )}
+            title="背景高亮"
+            disabled={isCodeMode}
+          >
+            <div className="w-4 h-4 border-2 border-current rounded" />
+          </button>
+          {showHighlightPalette && (
+            <div className="absolute top-full left-0 mt-1 bg-white border border-gray-200 rounded-lg shadow-lg p-2 z-20 grid grid-cols-6 gap-1 w-48">
+              {['#fef08a', '#fecaca', '#d1fae5', '#dbeafe', '#ede9fe', '#fce7f3', '#ffedd5', '#e5e7eb', '#d6d3d1'].map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  onClick={() => {
+                    setHighlightColor(color);
+                    setShowHighlightPalette(false);
+                  }}
+                  className="w-6 h-6 rounded border border-gray-300 cursor-pointer hover:scale-110 transition-transform"
+                  style={{ backgroundColor: color }}
+                  title={color}
+                />
+              ))}
+              <button
+                type="button"
+                onClick={() => {
+                  unsetHighlightColor();
+                  setShowHighlightPalette(false);
+                }}
+                className="w-6 h-6 rounded border border-gray-300 bg-white flex items-center justify-center text-xs text-gray-500 hover:bg-gray-50"
+                title="清除高亮"
+              >
+                ✕
+              </button>
+            </div>
+          )}
+        </div>
         <div className="w-px h-6 bg-gray-300 mx-1 hidden sm:block" />
         <button
           type="button"
